@@ -1,0 +1,170 @@
+# golangci-lint configuration for secretctl
+# See: https://golangci-lint.run/usage/configuration/
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    # Default linters
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    # Additional linters for security and quality
+    - bodyclose
+    - dogsled
+    - dupl
+    - gochecknoinits
+    - goconst
+    - gocritic
+    - gocyclo
+    - gofmt
+    - goimports
+    - goprintffuncname
+    - gosec
+    - misspell
+    - nakedret
+    - noctx
+    - nolintlint
+    - revive
+    - rowserrcheck
+    - stylecheck
+    - unconvert
+    - unparam
+    - whitespace
+
+linters-settings:
+  gocyclo:
+    min-complexity: 20
+
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+      - style
+    disabled-checks:
+      - paramTypeCombine
+      - appendAssign
+      - octalLiteral
+      - rangeValCopy
+      - stringXbytes
+
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+
+  gofmt:
+    simplify: true
+
+  goimports:
+    local-prefixes: github.com/forest6511/secretctl
+
+  gosec:
+    excludes:
+      - G104 # Audit errors not checked (we handle errors appropriately)
+    config:
+      G306: "0600" # Expected file permissions
+
+  misspell:
+    locale: US
+
+  nakedret:
+    max-func-lines: 30
+
+  revive:
+    rules:
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: dot-imports
+      - name: error-return
+      - name: error-strings
+      - name: error-naming
+      - name: exported
+      - name: if-return
+      - name: increment-decrement
+      - name: var-naming
+      - name: var-declaration
+      - name: package-comments
+      - name: range
+      - name: receiver-naming
+      - name: time-naming
+      - name: unexported-return
+      - name: indent-error-flow
+      - name: errorf
+      - name: empty-block
+      - name: superfluous-else
+      - name: unused-parameter
+      - name: unreachable-code
+      - name: redefines-builtin-id
+
+issues:
+  exclude-rules:
+    # Exclude some linters from running on tests files
+    - path: _test\.go
+      linters:
+        - dupl
+        - gosec
+        - goconst
+        - errcheck
+        - gocyclo
+
+    # Exclude known false positives
+    - path: pkg/crypto/crypto.go
+      linters:
+        - gosec
+      text: "G401" # Use of weak cryptographic primitive (we use AES-256-GCM which is strong)
+
+    # Defer rollback is intentional pattern - error is handled by commit
+    - linters:
+        - errcheck
+      text: "Error return value of `tx.Rollback` is not checked"
+
+    # Integer overflow in disk space calculation is acceptable (disk sizes are small enough)
+    - linters:
+        - gosec
+      text: "G115"
+
+    # Unused parameters in cobra command handlers are required by interface
+    - path: cmd/
+      linters:
+        - revive
+      text: "unused-parameter"
+
+    # Allow stuttering in exported types for clarity
+    - linters:
+        - revive
+      text: "exported:.*stutters"
+
+    # Cyclomatic complexity warnings for complex but necessary functions
+    - linters:
+        - gocyclo
+      path: pkg/vault/vault.go
+
+    # Blank import for SQLite driver is required
+    - linters:
+        - revive
+      text: "blank-imports"
+      path: pkg/vault/vault.go
+
+    # init function is required for cobra command registration
+    - linters:
+        - gochecknoinits
+      path: cmd/
+
+    # Unnecessary conversion is platform-specific (syscall.Stdin type varies)
+    - linters:
+        - unconvert
+      path: cmd/
+
+    # goconst: "genesis" is used as a sentinel value, making it a constant reduces clarity
+    - linters:
+        - goconst
+      text: "genesis"
+
+  max-issues-per-linter: 50
+  max-same-issues: 10
