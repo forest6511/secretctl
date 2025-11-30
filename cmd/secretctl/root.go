@@ -134,12 +134,20 @@ var initCmd = &cobra.Command{
 			return fmt.Errorf("passwords do not match")
 		}
 
-		// Minimum password length check
-		if len(password1) < 8 {
-			return fmt.Errorf("password must be at least 8 characters")
+		// 4. Validate password strength per requirements-ja.md §2.3
+		passwordResult := vault.ValidateMasterPassword(string(password1))
+		if !passwordResult.Valid {
+			// Hard errors (length requirements)
+			return fmt.Errorf("password validation failed: %s", passwordResult.Warnings[0])
 		}
 
-		// 4. Initialize vault
+		// Display strength and warnings (warnings are advisory, not blocking)
+		fmt.Printf("Password strength: %s\n", passwordResult.Strength)
+		for _, warning := range passwordResult.Warnings {
+			fmt.Printf("Warning: %s\n", warning)
+		}
+
+		// 5. Initialize vault
 		v = vault.New(vaultPath)
 		if err := v.Init(string(password1)); err != nil {
 			return fmt.Errorf("failed to initialize vault: %w", err)

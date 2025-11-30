@@ -949,7 +949,76 @@ func TestCheckIntegrityPermissions(t *testing.T) {
 		if result.PermissionsValid {
 			t.Error("expected PermissionsValid to be false for world-readable database file")
 		}
+		// Permission failures should also mark Valid=false
+		if result.Valid {
+			t.Error("expected Valid to be false for insecure permissions")
+		}
 	})
+
+	t.Run("insecure metadata file permissions", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		v := New(tmpDir)
+		password := "testpassword123"
+
+		if err := v.Init(password); err != nil {
+			t.Fatalf("Init failed: %v", err)
+		}
+
+		// Make metadata file world-readable
+		metaPath := filepath.Join(tmpDir, MetaFileName)
+		if err := os.Chmod(metaPath, 0644); err != nil {
+			t.Fatalf("failed to change permissions: %v", err)
+		}
+
+		result, err := v.CheckIntegrity()
+		if err != nil {
+			t.Fatalf("CheckIntegrity failed: %v", err)
+		}
+
+		if result.PermissionsValid {
+			t.Error("expected PermissionsValid to be false for world-readable metadata file")
+		}
+		// Permission failures should also mark Valid=false
+		if result.Valid {
+			t.Error("expected Valid to be false for insecure permissions")
+		}
+	})
+}
+
+// TestUnlockPermissionWarning verifies that Unlock warns about insecure permissions
+// per requirements-ja.md §4.1
+func TestUnlockPermissionWarning(t *testing.T) {
+	// Skip on Windows where file permissions work differently
+	if filepath.Separator == '\\' {
+		t.Skip("Skipping permission tests on Windows")
+	}
+
+	tmpDir := t.TempDir()
+	v := New(tmpDir)
+	password := "testpassword123"
+
+	if err := v.Init(password); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	// Make salt file world-readable to trigger warning
+	saltPath := filepath.Join(tmpDir, SaltFileName)
+	if err := os.Chmod(saltPath, 0644); err != nil {
+		t.Fatalf("failed to change permissions: %v", err)
+	}
+
+	// Unlock should succeed but print warning to stderr
+	// We can't easily capture stderr in this test, but we verify unlock works
+	if err := v.Unlock(password); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+
+	// Verify vault is unlocked despite insecure permissions (warning only, not blocking)
+	if v.IsLocked() {
+		t.Error("expected vault to be unlocked despite insecure permissions")
+	}
+
+	v.Lock()
 }
 
 // contains is a helper function for string containment check
@@ -1142,6 +1211,71 @@ func TestMetadataValidation(t *testing.T) {
 			},
 			wantErr: nil,
 		},
+		// URL scheme validation tests
+		{
+			name: "javascript url scheme rejected",
+			entry: &SecretEntry{
+				Value: []byte("test"),
+				Metadata: &SecretMetadata{
+					URL: "javascript:alert('xss')",
+				},
+			},
+			wantErr:   ErrURLInvalid,
+			errSubstr: "only http and https schemes are allowed",
+		},
+		{
+			name: "file url scheme rejected",
+			entry: &SecretEntry{
+				Value: []byte("test"),
+				Metadata: &SecretMetadata{
+					URL: "file:///etc/passwd",
+				},
+			},
+			wantErr:   ErrURLInvalid,
+			errSubstr: "only http and https schemes are allowed",
+		},
+		{
+			name: "ftp url scheme rejected",
+			entry: &SecretEntry{
+				Value: []byte("test"),
+				Metadata: &SecretMetadata{
+					URL: "ftp://example.com/file",
+				},
+			},
+			wantErr:   ErrURLInvalid,
+			errSubstr: "only http and https schemes are allowed",
+		},
+		{
+			name: "url without host rejected",
+			entry: &SecretEntry{
+				Value: []byte("test"),
+				Metadata: &SecretMetadata{
+					URL: "http:///path/only",
+				},
+			},
+			wantErr:   ErrURLInvalid,
+			errSubstr: "URL must have a host",
+		},
+		{
+			name: "valid https url",
+			entry: &SecretEntry{
+				Value: []byte("test"),
+				Metadata: &SecretMetadata{
+					URL: "https://example.com/api/v1",
+				},
+			},
+			wantErr: nil,
+		},
+		{
+			name: "valid http url",
+			entry: &SecretEntry{
+				Value: []byte("test"),
+				Metadata: &SecretMetadata{
+					URL: "http://localhost:8080/health",
+				},
+			},
+			wantErr: nil,
+		},
 	}
 
 	for i, tt := range tests {
@@ -1160,6 +1294,154 @@ func TestMetadataValidation(t *testing.T) {
 				}
 			} else if err != nil {
 				t.Errorf("expected no error, got %v", err)
+			}
+		})
+	}
+}
+
+// TestValidateMasterPassword tests password validation per requirements-ja.md §2.3
+func TestValidateMasterPassword(t *testing.T) {
+	tests := []struct {
+		name            string
+		password        string
+		expectValid     bool
+		expectStrength  PasswordStrength
+		expectWarnings  bool
+		minWarningCount int
+	}{
+		// Hard requirement failures
+		{
+			name:            "too short",
+			password:        "abc123",
+			expectValid:     false,
+			expectStrength:  PasswordWeak,
+			expectWarnings:  true,
+			minWarningCount: 1,
+		},
+		{
+			name:            "empty password",
+			password:        "",
+			expectValid:     false,
+			expectStrength:  PasswordWeak,
+			expectWarnings:  true,
+			minWarningCount: 1,
+		},
+		{
+			name:            "just under minimum",
+			password:        "1234567",
+			expectValid:     false,
+			expectStrength:  PasswordWeak,
+			expectWarnings:  true,
+			minWarningCount: 1,
+		},
+		{
+			name:            "too long (129 chars)",
+			password:        string(make([]byte, MaxPasswordLength+1)),
+			expectValid:     false,
+			expectStrength:  PasswordWeak,
+			expectWarnings:  true,
+			minWarningCount: 1,
+		},
+		// Valid passwords with varying strengths
+		{
+			name:            "exactly minimum length, simple",
+			password:        "password",
+			expectValid:     true,
+			expectStrength:  PasswordWeak,
+			expectWarnings:  true,
+			minWarningCount: 2, // complexity + length warning
+		},
+		{
+			name:            "8 chars with numbers",
+			password:        "pass1234",
+			expectValid:     true,
+			expectStrength:  PasswordFair, // 2 character types (lower + digit)
+			expectWarnings:  true,
+			minWarningCount: 1, // length warning only
+		},
+		{
+			name:            "12 chars mixed case",
+			password:        "Password1234",
+			expectValid:     true,
+			expectStrength:  PasswordGood,
+			expectWarnings:  false,
+			minWarningCount: 0,
+		},
+		{
+			name:            "16 chars with all types",
+			password:        "Password1234!@#$",
+			expectValid:     true,
+			expectStrength:  PasswordStrong,
+			expectWarnings:  false,
+			minWarningCount: 0,
+		},
+		{
+			name:            "maximum length valid",
+			password:        string(make([]byte, MaxPasswordLength)),
+			expectValid:     true,
+			expectStrength:  PasswordFair,
+			expectWarnings:  true,
+			minWarningCount: 1, // complexity warning (all nulls)
+		},
+		{
+			name:            "only lowercase",
+			password:        "verylongpassword",
+			expectValid:     true,
+			expectStrength:  PasswordFair, // long but low complexity
+			expectWarnings:  true,
+			minWarningCount: 1, // complexity warning
+		},
+		{
+			name:            "short but complex",
+			password:        "Pa1!sswd",
+			expectValid:     true,
+			expectStrength:  PasswordFair,
+			expectWarnings:  true,
+			minWarningCount: 1, // length warning
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ValidateMasterPassword(tt.password)
+
+			if result.Valid != tt.expectValid {
+				t.Errorf("Valid: expected %v, got %v", tt.expectValid, result.Valid)
+			}
+
+			if result.Strength != tt.expectStrength {
+				t.Errorf("Strength: expected %v, got %v", tt.expectStrength, result.Strength)
+			}
+
+			if tt.expectWarnings && len(result.Warnings) < tt.minWarningCount {
+				t.Errorf("Warnings: expected at least %d, got %d: %v",
+					tt.minWarningCount, len(result.Warnings), result.Warnings)
+			}
+
+			if !tt.expectWarnings && len(result.Warnings) > 0 {
+				t.Errorf("Warnings: expected none, got %v", result.Warnings)
+			}
+		})
+	}
+}
+
+// TestPasswordStrengthString tests the String method of PasswordStrength
+func TestPasswordStrengthString(t *testing.T) {
+	tests := []struct {
+		strength PasswordStrength
+		expected string
+	}{
+		{PasswordWeak, "weak"},
+		{PasswordFair, "fair"},
+		{PasswordGood, "good"},
+		{PasswordStrong, "strong"},
+		{PasswordStrength(99), "unknown"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.expected, func(t *testing.T) {
+			if got := tt.strength.String(); got != tt.expected {
+				t.Errorf("String(): expected %q, got %q", tt.expected, got)
 			}
 		})
 	}

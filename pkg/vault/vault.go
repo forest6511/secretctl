@@ -88,7 +88,117 @@ var (
 	ErrTooManyTags          = errors.New("vault: too many tags")
 	ErrTagInvalid           = errors.New("vault: invalid tag format")
 	ErrExpiresInPast        = errors.New("vault: expires_at must be in the future")
+	ErrPasswordTooShort     = errors.New("vault: password must be at least 8 characters")
+	ErrPasswordTooLong      = errors.New("vault: password must be at most 128 characters")
 )
+
+// Password validation constants per requirements-ja.md §2.3
+const (
+	MinPasswordLength = 8
+	MaxPasswordLength = 128
+)
+
+// PasswordStrength represents the strength level of a password
+type PasswordStrength int
+
+const (
+	PasswordWeak PasswordStrength = iota
+	PasswordFair
+	PasswordGood
+	PasswordStrong
+)
+
+// String returns a human-readable representation of password strength
+func (s PasswordStrength) String() string {
+	switch s {
+	case PasswordWeak:
+		return "weak"
+	case PasswordFair:
+		return "fair"
+	case PasswordGood:
+		return "good"
+	case PasswordStrong:
+		return "strong"
+	default:
+		return "unknown"
+	}
+}
+
+// PasswordValidationResult contains the result of password validation
+type PasswordValidationResult struct {
+	Valid    bool             // Whether password meets minimum requirements
+	Strength PasswordStrength // Estimated strength
+	Warnings []string         // Suggestions for improvement (not errors)
+}
+
+// ValidateMasterPassword validates a master password per requirements-ja.md §2.3
+// Returns validation result with strength assessment and warnings (not errors for complexity)
+func ValidateMasterPassword(password string) *PasswordValidationResult {
+	result := &PasswordValidationResult{
+		Valid:    true,
+		Strength: PasswordFair,
+	}
+
+	// Hard requirements (errors)
+	if len(password) < MinPasswordLength {
+		result.Valid = false
+		result.Strength = PasswordWeak
+		result.Warnings = append(result.Warnings,
+			fmt.Sprintf("Password must be at least %d characters", MinPasswordLength))
+		return result
+	}
+	if len(password) > MaxPasswordLength {
+		result.Valid = false
+		result.Strength = PasswordWeak
+		result.Warnings = append(result.Warnings,
+			fmt.Sprintf("Password must be at most %d characters", MaxPasswordLength))
+		return result
+	}
+
+	// Complexity checks (warnings only, per requirements)
+	hasUpper := regexp.MustCompile(`[A-Z]`).MatchString(password)
+	hasLower := regexp.MustCompile(`[a-z]`).MatchString(password)
+	hasDigit := regexp.MustCompile(`\d`).MatchString(password)
+	hasSpecial := regexp.MustCompile(`[!@#$%^&*(),.?":{}|<>\-_=+\[\]\\;'~/\x60]`).MatchString(password)
+
+	complexity := 0
+	if hasUpper {
+		complexity++
+	}
+	if hasLower {
+		complexity++
+	}
+	if hasDigit {
+		complexity++
+	}
+	if hasSpecial {
+		complexity++
+	}
+
+	// Generate warnings for weak complexity
+	if complexity < 2 {
+		result.Warnings = append(result.Warnings,
+			"Consider using a mix of uppercase, lowercase, numbers, and symbols")
+	}
+	if len(password) < 12 {
+		result.Warnings = append(result.Warnings,
+			"Longer passwords (12+ characters) are more secure")
+	}
+
+	// Determine strength based on complexity and length
+	switch {
+	case complexity >= 3 && len(password) >= 16:
+		result.Strength = PasswordStrong
+	case complexity >= 2 && len(password) >= 12:
+		result.Strength = PasswordGood
+	case complexity >= 2 || len(password) >= 12:
+		result.Strength = PasswordFair
+	default:
+		result.Strength = PasswordWeak
+	}
+
+	return result
+}
 
 // VaultMeta holds vault metadata
 type VaultMeta struct {
@@ -364,6 +474,10 @@ func (v *Vault) Unlock(masterPassword string) error {
 		_ = v.audit.LogSuccess(audit.OpVaultUnlock, audit.SourceCLI, "")
 	}
 
+	// Check file permissions and warn if insecure (per requirements-ja.md §4.1)
+	// This is a warning only, not blocking - user may have intentional reasons
+	v.checkAndWarnPermissions()
+
 	return nil
 }
 
@@ -408,6 +522,29 @@ func (v *Vault) exists() bool {
 	saltPath := filepath.Join(v.path, SaltFileName)
 	_, err := os.Stat(saltPath)
 	return err == nil
+}
+
+// checkAndWarnPermissions checks file permissions and prints warnings if insecure.
+// Per requirements-ja.md §4.1: "0600以外のパーミッションで警告表示"
+// This is advisory only and does not block operations.
+func (v *Vault) checkAndWarnPermissions() {
+	// Check vault directory (should be 0700)
+	if info, err := os.Stat(v.path); err == nil {
+		if perm := info.Mode().Perm(); perm&0077 != 0 {
+			fmt.Fprintf(os.Stderr, "warning: vault directory has insecure permissions %04o (expected 0700)\n", perm)
+		}
+	}
+
+	// Check critical files (should be 0600)
+	files := []string{SaltFileName, MetaFileName, DBFileName}
+	for _, fname := range files {
+		fpath := filepath.Join(v.path, fname)
+		if info, err := os.Stat(fpath); err == nil {
+			if perm := info.Mode().Perm(); perm&0077 != 0 {
+				fmt.Fprintf(os.Stderr, "warning: %s has insecure permissions %04o (expected 0600)\n", fname, perm)
+			}
+		}
+	}
 }
 
 // createTables creates the required SQLite tables
@@ -545,14 +682,23 @@ func validateMetadata(metadata *SecretMetadata, tags []string, expiresAt *time.T
 				ErrNotesTooLarge, len(metadata.Notes), MaxNotesSize)
 		}
 
-		// url: maximum 2048 characters, RFC 3986 format
+		// url: maximum 2048 characters, http/https only with host required
 		if metadata.URL != "" {
 			if len(metadata.URL) > MaxURLLength {
 				return fmt.Errorf("%w: %d characters exceeds maximum of %d",
 					ErrURLTooLong, len(metadata.URL), MaxURLLength)
 			}
-			if _, err := url.Parse(metadata.URL); err != nil {
+			parsedURL, err := url.Parse(metadata.URL)
+			if err != nil {
 				return fmt.Errorf("%w: %v", ErrURLInvalid, err)
+			}
+			// Only allow http and https schemes to prevent javascript: and other dangerous schemes
+			if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+				return fmt.Errorf("%w: only http and https schemes are allowed", ErrURLInvalid)
+			}
+			// Require a host to prevent malformed URLs
+			if parsedURL.Host == "" {
+				return fmt.Errorf("%w: URL must have a host", ErrURLInvalid)
 			}
 		}
 	}
@@ -1027,10 +1173,12 @@ func (v *Vault) CheckIntegrity() (*IntegrityCheckResult, error) {
 	}
 
 	// Check vault directory permissions (should be 0700)
+	// Permission failures are security issues and mark the vault as invalid
 	dirInfo, err := os.Stat(v.path)
 	if err == nil {
 		dirPerm := dirInfo.Mode().Perm()
 		if dirPerm&0077 != 0 { // Check if group/other have any permissions
+			result.Valid = false
 			result.PermissionsValid = false
 			result.Errors = append(result.Errors, fmt.Sprintf("vault directory has insecure permissions: %04o (expected 0700)", dirPerm))
 		}
@@ -1052,6 +1200,7 @@ func (v *Vault) CheckIntegrity() (*IntegrityCheckResult, error) {
 		// Check salt file permissions (should be 0600)
 		saltPerm := saltInfo.Mode().Perm()
 		if saltPerm&0077 != 0 { // Check if group/other have any permissions
+			result.Valid = false
 			result.PermissionsValid = false
 			result.Errors = append(result.Errors, fmt.Sprintf("salt file has insecure permissions: %04o (expected 0600)", saltPerm))
 		}
@@ -1068,6 +1217,7 @@ func (v *Vault) CheckIntegrity() (*IntegrityCheckResult, error) {
 		// Check metadata file permissions (should be 0600)
 		metaPerm := metaInfo.Mode().Perm()
 		if metaPerm&0077 != 0 { // Check if group/other have any permissions
+			result.Valid = false
 			result.PermissionsValid = false
 			result.Errors = append(result.Errors, fmt.Sprintf("metadata file has insecure permissions: %04o (expected 0600)", metaPerm))
 		}
@@ -1107,6 +1257,7 @@ func (v *Vault) CheckIntegrity() (*IntegrityCheckResult, error) {
 	// Check database file permissions (should be 0600)
 	dbPerm := dbInfo.Mode().Perm()
 	if dbPerm&0077 != 0 { // Check if group/other have any permissions
+		result.Valid = false
 		result.PermissionsValid = false
 		result.Errors = append(result.Errors, fmt.Sprintf("database file has insecure permissions: %04o (expected 0600)", dbPerm))
 	}
