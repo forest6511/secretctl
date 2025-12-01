@@ -29,10 +29,10 @@ var (
 
 // Exit codes per requirements-ja.md §1.3
 const (
-	ExitSecretNotFound = 2
-	ExitTimeout        = 124
+	ExitSecretNotFound  = 2
+	ExitTimeout         = 124
 	ExitCommandNotFound = 127
-	ExitSignalBase     = 128
+	ExitSignalBase      = 128
 )
 
 func init() {
@@ -44,7 +44,7 @@ func init() {
 	runCmd.Flags().StringVar(&runEnvPrefix, "env-prefix", "", "Environment variable name prefix")
 	runCmd.Flags().BoolVar(&runObfuscateKeys, "obfuscate-keys", false, "Obfuscate secret key names in error messages")
 
-	runCmd.MarkFlagRequired("key")
+	_ = runCmd.MarkFlagRequired("key")
 }
 
 // runCmd executes a command with secrets injected as environment variables
@@ -128,7 +128,7 @@ func wipeSecrets(secrets []secretData) {
 // obfuscateKey returns an obfuscated version of the key for error messages
 // This prevents key names from appearing in logs in sensitive environments
 func obfuscateKey(key string) string {
-	if !runObfuscateKeys || len(key) == 0 {
+	if !runObfuscateKeys || key == "" {
 		return key
 	}
 	if len(key) <= 4 {
@@ -285,7 +285,7 @@ func keyToEnvName(key string) string {
 // validateEnvName validates that a name is a valid POSIX environment variable name
 // Pattern: ^[A-Za-z_][A-Za-z0-9_]*$
 func validateEnvName(name string) error {
-	if len(name) == 0 {
+	if name == "" {
 		return fmt.Errorf("environment variable name cannot be empty")
 	}
 
@@ -434,7 +434,7 @@ func executeCommand(args []string, env []string, secrets []secretData) error {
 					return
 				default:
 					if cmd.Process != nil {
-						cmd.Process.Signal(sig)
+						_ = cmd.Process.Signal(sig)
 					}
 				}
 			case <-done:
@@ -604,7 +604,7 @@ func (s *outputSanitizer) copy(dst io.Writer, src io.Reader) {
 			}
 
 			if writeLen > 0 {
-				dst.Write(data[:writeLen])
+				_, _ = dst.Write(data[:writeLen])
 			}
 
 			// Save remaining data for next iteration
@@ -619,7 +619,7 @@ func (s *outputSanitizer) copy(dst io.Writer, src io.Reader) {
 		if readErr != nil {
 			// Write any remaining overlap on EOF
 			if len(overlap) > 0 {
-				dst.Write(overlap)
+				_, _ = dst.Write(overlap)
 			}
 			break
 		}
