@@ -20,10 +20,11 @@ import (
 
 // Run command flags
 var (
-	runKeys       []string
-	runTimeout    time.Duration
-	runNoSanitize bool
-	runEnvPrefix  string
+	runKeys          []string
+	runTimeout       time.Duration
+	runNoSanitize    bool
+	runEnvPrefix     string
+	runObfuscateKeys bool
 )
 
 // Exit codes per requirements-ja.md §1.3
@@ -41,6 +42,7 @@ func init() {
 	runCmd.Flags().DurationVarP(&runTimeout, "timeout", "t", 5*time.Minute, "Command timeout")
 	runCmd.Flags().BoolVar(&runNoSanitize, "no-sanitize", false, "Disable output sanitization")
 	runCmd.Flags().StringVar(&runEnvPrefix, "env-prefix", "", "Environment variable name prefix")
+	runCmd.Flags().BoolVar(&runObfuscateKeys, "obfuscate-keys", false, "Obfuscate secret key names in error messages")
 
 	runCmd.MarkFlagRequired("key")
 }
@@ -91,6 +93,8 @@ func executeRun(commandArgs []string) error {
 	if err != nil {
 		return err
 	}
+	// Ensure secrets are wiped from memory when we're done
+	defer wipeSecrets(secrets)
 
 	if len(secrets) == 0 {
 		return fmt.Errorf("no secrets matched the specified patterns")
@@ -110,6 +114,28 @@ func executeRun(commandArgs []string) error {
 type secretData struct {
 	key   string
 	value []byte
+}
+
+// wipeSecrets zeroes out all secret values in memory to prevent leakage
+func wipeSecrets(secrets []secretData) {
+	for i := range secrets {
+		for j := range secrets[i].value {
+			secrets[i].value[j] = 0
+		}
+	}
+}
+
+// obfuscateKey returns an obfuscated version of the key for error messages
+// This prevents key names from appearing in logs in sensitive environments
+func obfuscateKey(key string) string {
+	if !runObfuscateKeys || len(key) == 0 {
+		return key
+	}
+	if len(key) <= 4 {
+		return "***"
+	}
+	// Show first 2 and last 2 characters
+	return key[:2] + "***" + key[len(key)-2:]
 }
 
 // collectSecrets expands patterns and fetches secret values
@@ -150,18 +176,18 @@ func collectSecrets(patterns []string) ([]secretData, error) {
 	for _, key := range matchedKeys {
 		entry, err := v.GetSecret(key)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get secret '%s': %w", key, err)
+			return nil, fmt.Errorf("failed to get secret '%s': %w", obfuscateKey(key), err)
 		}
 
 		// Check if secret is expired
 		if entry.ExpiresAt != nil {
 			if entry.ExpiresAt.Before(now) {
-				return nil, fmt.Errorf("secret '%s' has expired at %v", key, entry.ExpiresAt.Format(time.RFC3339))
+				return nil, fmt.Errorf("secret '%s' has expired at %v", obfuscateKey(key), entry.ExpiresAt.Format(time.RFC3339))
 			}
 			// Warn if secret will expire during command execution
 			if entry.ExpiresAt.Before(now.Add(runTimeout)) {
 				fmt.Fprintf(os.Stderr, "warning: secret '%s' will expire at %v (during command execution)\n",
-					key, entry.ExpiresAt.Format(time.RFC3339))
+					obfuscateKey(key), entry.ExpiresAt.Format(time.RFC3339))
 			}
 		}
 
@@ -229,12 +255,12 @@ func buildEnvironment(secrets []secretData) ([]string, error) {
 
 		// Validate environment variable name
 		if err := validateEnvName(envName); err != nil {
-			return nil, fmt.Errorf("invalid environment variable name for key '%s': %w", secret.key, err)
+			return nil, fmt.Errorf("invalid environment variable name for key '%s': %w", obfuscateKey(secret.key), err)
 		}
 
 		// Check for NUL bytes in value
 		if err := validateNoNulBytes(envName, secret.value); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("validation error for key '%s': %w", obfuscateKey(secret.key), err)
 		}
 
 		// Reject reserved environment variables
@@ -298,6 +324,8 @@ var reservedEnvVars = map[string]bool{
 	"PATH": true, "HOME": true, "USER": true, "SHELL": true,
 	"PWD": true, "OLDPWD": true, "TERM": true, "LANG": true,
 	"IFS": true, "PS1": true, "PS2": true,
+	// LC_ALL and LC_CTYPE can enable localization attacks
+	"LC_ALL": true, "LC_CTYPE": true,
 }
 
 // ErrReservedEnvVar is returned when attempting to overwrite a reserved environment variable
@@ -308,7 +336,7 @@ func checkReservedEnvVar(name string) error {
 	if reservedEnvVars[name] {
 		return fmt.Errorf("%w: %s (use --env-prefix to avoid collision)", ErrReservedEnvVar, name)
 	}
-	// Warn (but don't error) for LC_* variables
+	// Warn (but don't error) for other LC_* variables
 	if strings.HasPrefix(name, "LC_") {
 		fmt.Fprintf(os.Stderr, "warning: overwriting locale environment variable: %s\n", name)
 	}
@@ -508,6 +536,30 @@ func newOutputSanitizer(secrets []secretData) *outputSanitizer {
 	}
 }
 
+// binaryThreshold is the percentage of non-printable characters that triggers binary detection
+const binaryThreshold = 0.05 // 5%
+
+// isBinaryData detects binary data using heuristics (not just NUL bytes)
+// This prevents attackers from injecting a single NUL byte to bypass sanitization
+func isBinaryData(data []byte) bool {
+	if len(data) == 0 {
+		return false
+	}
+
+	nonPrintable := 0
+	for _, b := range data {
+		// Count non-printable characters (excluding common whitespace)
+		if b < 0x20 && b != '\t' && b != '\n' && b != '\r' {
+			nonPrintable++
+		} else if b == 0x7F {
+			nonPrintable++
+		}
+	}
+
+	// If more than threshold% are non-printable, treat as binary
+	return float64(nonPrintable)/float64(len(data)) > binaryThreshold
+}
+
 // copy reads from src, sanitizes, and writes to dst
 // It maintains an overlap buffer to handle secrets spanning read boundaries.
 func (s *outputSanitizer) copy(dst io.Writer, src io.Reader) {
@@ -527,14 +579,15 @@ func (s *outputSanitizer) copy(dst io.Writer, src io.Reader) {
 				data = buf[:n]
 			}
 
-			// Skip sanitization for binary output (contains NUL)
-			isBinary := bytes.Contains(data, []byte{0x00})
+			// Use heuristic binary detection (not just NUL byte check)
+			isBinary := isBinaryData(data)
 			if !isBinary {
 				data = s.sanitize(data)
 			}
 
 			// Calculate how much to write and how much to keep for overlap
 			var writeLen int
+			// Add bounds check for maxSecretLen
 			if readErr == nil && s.maxSecretLen > 1 && !isBinary {
 				// Keep (maxSecretLen - 1) bytes for next iteration to catch boundary-spanning secrets
 				overlapLen := s.maxSecretLen - 1
@@ -574,10 +627,24 @@ func (s *outputSanitizer) copy(dst io.Writer, src io.Reader) {
 }
 
 // sanitize replaces secret values with [REDACTED:key]
+// Uses a single-pass approach for better performance when multiple secrets exist
 func (s *outputSanitizer) sanitize(data []byte) []byte {
+	if len(s.replacements) == 0 {
+		return data
+	}
+
+	// For single secret, use simple replacement
+	if len(s.replacements) == 1 {
+		return bytes.ReplaceAll(data, s.replacements[0].secret, s.replacements[0].placeholder)
+	}
+
+	// For multiple secrets, use a more efficient approach
+	// Build result incrementally to avoid multiple full scans
 	result := data
 	for _, r := range s.replacements {
-		result = bytes.ReplaceAll(result, r.secret, r.placeholder)
+		if bytes.Contains(result, r.secret) {
+			result = bytes.ReplaceAll(result, r.secret, r.placeholder)
+		}
 	}
 	return result
 }

@@ -333,7 +333,7 @@ func TestOutputSanitizerBinarySkip(t *testing.T) {
 
 // TestReservedEnvVars tests that reserved variables are recognized
 func TestReservedEnvVars(t *testing.T) {
-	reserved := []string{"PATH", "HOME", "USER", "SHELL", "PWD", "OLDPWD", "TERM", "LANG", "IFS", "PS1", "PS2"}
+	reserved := []string{"PATH", "HOME", "USER", "SHELL", "PWD", "OLDPWD", "TERM", "LANG", "IFS", "PS1", "PS2", "LC_ALL", "LC_CTYPE"}
 
 	for _, name := range reserved {
 		if !reservedEnvVars[name] {
@@ -376,9 +376,23 @@ func TestCheckReservedEnvVar(t *testing.T) {
 		})
 	}
 
-	// LC_* variables should warn but not error
-	lcVars := []string{"LC_ALL", "LC_CTYPE", "LC_MESSAGES"}
-	for _, name := range lcVars {
+	// LC_ALL and LC_CTYPE should now return error (security hardening)
+	lcBlocked := []string{"LC_ALL", "LC_CTYPE"}
+	for _, name := range lcBlocked {
+		t.Run("lc_blocked_"+name, func(t *testing.T) {
+			err := checkReservedEnvVar(name)
+			if err == nil {
+				t.Errorf("checkReservedEnvVar(%q) should return error", name)
+			}
+			if !errors.Is(err, ErrReservedEnvVar) {
+				t.Errorf("checkReservedEnvVar(%q) should return ErrReservedEnvVar, got %v", name, err)
+			}
+		})
+	}
+
+	// Other LC_* variables should warn but not error
+	lcWarn := []string{"LC_MESSAGES", "LC_NUMERIC"}
+	for _, name := range lcWarn {
 		t.Run("lc_warn_"+name, func(t *testing.T) {
 			err := checkReservedEnvVar(name)
 			if err != nil {
@@ -479,5 +493,139 @@ func TestOutputSanitizerPrecomputedReplacements(t *testing.T) {
 	}
 	if !bytes.Equal(r.placeholder, []byte("[REDACTED:API_KEY]")) {
 		t.Errorf("replacement placeholder = %q, want %q", string(r.placeholder), "[REDACTED:API_KEY]")
+	}
+}
+
+// TestIsBinaryData tests the heuristic binary detection
+func TestIsBinaryData(t *testing.T) {
+	tests := []struct {
+		name     string
+		data     []byte
+		expected bool
+	}{
+		{
+			name:     "normal text",
+			data:     []byte("Hello, World!\nThis is a test."),
+			expected: false,
+		},
+		{
+			name:     "text with tabs and newlines",
+			data:     []byte("Line1\tTab\nLine2\r\nLine3"),
+			expected: false,
+		},
+		{
+			name:     "single NUL byte should not trigger binary",
+			data:     append([]byte("Normal text with \x00 one NUL in many chars, this is a long string to dilute the percentage"), make([]byte, 0)...),
+			expected: false, // 1 NUL in ~90 bytes = ~1% < 5%
+		},
+		{
+			name:     "many non-printable chars",
+			data:     []byte{0x01, 0x02, 0x03, 0x04, 0x05, 'H', 'i'},
+			expected: true, // 5 non-printable in 7 bytes = 71% > 5%
+		},
+		{
+			name:     "empty data",
+			data:     []byte{},
+			expected: false,
+		},
+		{
+			name:     "binary file signature",
+			data:     []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A},
+			expected: true, // PNG header has multiple control chars
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := isBinaryData(tc.data)
+			if result != tc.expected {
+				t.Errorf("isBinaryData() = %v, want %v", result, tc.expected)
+			}
+		})
+	}
+}
+
+// TestObfuscateKey tests key obfuscation for error messages
+func TestObfuscateKey(t *testing.T) {
+	// Save and restore flag
+	oldFlag := runObfuscateKeys
+	defer func() { runObfuscateKeys = oldFlag }()
+
+	tests := []struct {
+		name      string
+		key       string
+		obfuscate bool
+		expected  string
+	}{
+		{
+			name:      "obfuscate disabled",
+			key:       "api-key",
+			obfuscate: false,
+			expected:  "api-key",
+		},
+		{
+			name:      "obfuscate long key",
+			key:       "my-secret-api-key",
+			obfuscate: true,
+			expected:  "my***ey",
+		},
+		{
+			name:      "obfuscate short key",
+			key:       "key",
+			obfuscate: true,
+			expected:  "***",
+		},
+		{
+			name:      "obfuscate exactly 4 chars",
+			key:       "keys",
+			obfuscate: true,
+			expected:  "***",
+		},
+		{
+			name:      "obfuscate 5 chars",
+			key:       "mykey",
+			obfuscate: true,
+			expected:  "my***ey",
+		},
+		{
+			name:      "empty key",
+			key:       "",
+			obfuscate: true,
+			expected:  "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runObfuscateKeys = tc.obfuscate
+			result := obfuscateKey(tc.key)
+			if result != tc.expected {
+				t.Errorf("obfuscateKey(%q) = %q, want %q", tc.key, result, tc.expected)
+			}
+		})
+	}
+}
+
+// TestWipeSecrets tests that secret values are zeroed out
+func TestWipeSecrets(t *testing.T) {
+	secrets := []secretData{
+		{key: "key1", value: []byte("secret1")},
+		{key: "key2", value: []byte("secret2secret2")},
+	}
+
+	// Verify secrets have values
+	if !bytes.Equal(secrets[0].value, []byte("secret1")) {
+		t.Fatal("initial secret value incorrect")
+	}
+
+	wipeSecrets(secrets)
+
+	// Verify all bytes are zeroed
+	for i, s := range secrets {
+		for j, b := range s.value {
+			if b != 0 {
+				t.Errorf("secrets[%d].value[%d] = %d, want 0", i, j, b)
+			}
+		}
 	}
 }
