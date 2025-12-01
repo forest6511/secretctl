@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 )
 
@@ -348,6 +349,45 @@ func TestReservedEnvVars(t *testing.T) {
 	}
 }
 
+// TestCheckReservedEnvVar tests that reserved env vars return error
+func TestCheckReservedEnvVar(t *testing.T) {
+	// Reserved variables should return error
+	reserved := []string{"PATH", "HOME", "USER", "SHELL", "IFS"}
+	for _, name := range reserved {
+		t.Run("reserved_"+name, func(t *testing.T) {
+			err := checkReservedEnvVar(name)
+			if err == nil {
+				t.Errorf("checkReservedEnvVar(%q) should return error", name)
+			}
+			if !errors.Is(err, ErrReservedEnvVar) {
+				t.Errorf("checkReservedEnvVar(%q) should return ErrReservedEnvVar, got %v", name, err)
+			}
+		})
+	}
+
+	// Non-reserved variables should not return error
+	notReserved := []string{"API_KEY", "MY_VAR", "CUSTOM_PATH", "HOME_DIR"}
+	for _, name := range notReserved {
+		t.Run("not_reserved_"+name, func(t *testing.T) {
+			err := checkReservedEnvVar(name)
+			if err != nil {
+				t.Errorf("checkReservedEnvVar(%q) should not return error, got %v", name, err)
+			}
+		})
+	}
+
+	// LC_* variables should warn but not error
+	lcVars := []string{"LC_ALL", "LC_CTYPE", "LC_MESSAGES"}
+	for _, name := range lcVars {
+		t.Run("lc_warn_"+name, func(t *testing.T) {
+			err := checkReservedEnvVar(name)
+			if err != nil {
+				t.Errorf("checkReservedEnvVar(%q) should not return error (only warn), got %v", name, err)
+			}
+		})
+	}
+}
+
 // TestExitError tests the exitError type
 func TestExitError(t *testing.T) {
 	tests := []struct {
@@ -397,5 +437,47 @@ func TestExitCodes(t *testing.T) {
 	}
 	if ExitSignalBase != 128 {
 		t.Errorf("ExitSignalBase = %d, want 128", ExitSignalBase)
+	}
+}
+
+// TestOutputSanitizerMaxSecretLen tests that maxSecretLen is calculated correctly
+func TestOutputSanitizerMaxSecretLen(t *testing.T) {
+	secrets := []secretData{
+		{key: "short", value: []byte("abcd")},                              // 4 bytes
+		{key: "medium", value: []byte("medium12345")},                      // 11 bytes
+		{key: "long", value: []byte("this_is_a_longer_secret_value_here")}, // 34 bytes
+		{key: "tiny", value: []byte("abc")},                                // 3 bytes - should be ignored
+	}
+
+	sanitizer := newOutputSanitizer(secrets)
+
+	if sanitizer.maxSecretLen != 34 {
+		t.Errorf("maxSecretLen = %d, want 34", sanitizer.maxSecretLen)
+	}
+
+	// Should have 3 replacements (tiny is < 4 bytes)
+	if len(sanitizer.replacements) != 3 {
+		t.Errorf("len(replacements) = %d, want 3", len(sanitizer.replacements))
+	}
+}
+
+// TestOutputSanitizerPrecomputedReplacements tests that replacements are pre-computed
+func TestOutputSanitizerPrecomputedReplacements(t *testing.T) {
+	secrets := []secretData{
+		{key: "api-key", value: []byte("secret1234")},
+	}
+
+	sanitizer := newOutputSanitizer(secrets)
+
+	if len(sanitizer.replacements) != 1 {
+		t.Fatalf("expected 1 replacement, got %d", len(sanitizer.replacements))
+	}
+
+	r := sanitizer.replacements[0]
+	if !bytes.Equal(r.secret, []byte("secret1234")) {
+		t.Errorf("replacement secret = %q, want %q", string(r.secret), "secret1234")
+	}
+	if !bytes.Equal(r.placeholder, []byte("[REDACTED:API_KEY]")) {
+		t.Errorf("replacement placeholder = %q, want %q", string(r.placeholder), "[REDACTED:API_KEY]")
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -141,6 +142,9 @@ func collectSecrets(patterns []string) ([]secretData, error) {
 		return nil, fmt.Errorf("no secrets match the specified patterns")
 	}
 
+	// Use consistent time for all expiration checks
+	now := time.Now()
+
 	// Fetch secret values
 	var secrets []secretData
 	for _, key := range matchedKeys {
@@ -150,8 +154,15 @@ func collectSecrets(patterns []string) ([]secretData, error) {
 		}
 
 		// Check if secret is expired
-		if entry.ExpiresAt != nil && entry.ExpiresAt.Before(time.Now()) {
-			return nil, fmt.Errorf("secret '%s' has expired", key)
+		if entry.ExpiresAt != nil {
+			if entry.ExpiresAt.Before(now) {
+				return nil, fmt.Errorf("secret '%s' has expired at %v", key, entry.ExpiresAt.Format(time.RFC3339))
+			}
+			// Warn if secret will expire during command execution
+			if entry.ExpiresAt.Before(now.Add(runTimeout)) {
+				fmt.Fprintf(os.Stderr, "warning: secret '%s' will expire at %v (during command execution)\n",
+					key, entry.ExpiresAt.Format(time.RFC3339))
+			}
 		}
 
 		secrets = append(secrets, secretData{
@@ -226,8 +237,10 @@ func buildEnvironment(secrets []secretData) ([]string, error) {
 			return nil, err
 		}
 
-		// Warn if overwriting reserved variables
-		warnReservedEnvVar(envName)
+		// Reject reserved environment variables
+		if err := checkReservedEnvVar(envName); err != nil {
+			return nil, err
+		}
 
 		env = append(env, fmt.Sprintf("%s=%s", envName, string(secret.value)))
 	}
@@ -280,29 +293,33 @@ func validateNoNulBytes(name string, value []byte) error {
 	return nil
 }
 
-// reservedEnvVars are variables that should not be overwritten
+// reservedEnvVars are critical system variables that must not be overwritten
 var reservedEnvVars = map[string]bool{
 	"PATH": true, "HOME": true, "USER": true, "SHELL": true,
 	"PWD": true, "OLDPWD": true, "TERM": true, "LANG": true,
 	"IFS": true, "PS1": true, "PS2": true,
 }
 
-// warnReservedEnvVar prints a warning if overwriting a reserved variable
-func warnReservedEnvVar(name string) {
+// ErrReservedEnvVar is returned when attempting to overwrite a reserved environment variable
+var ErrReservedEnvVar = errors.New("cannot overwrite reserved environment variable")
+
+// checkReservedEnvVar returns an error if the name is a reserved variable
+func checkReservedEnvVar(name string) error {
 	if reservedEnvVars[name] {
-		fmt.Fprintf(os.Stderr, "warning: overwriting reserved environment variable: %s\n", name)
+		return fmt.Errorf("%w: %s (use --env-prefix to avoid collision)", ErrReservedEnvVar, name)
 	}
-	// Also warn for LC_* variables
+	// Warn (but don't error) for LC_* variables
 	if strings.HasPrefix(name, "LC_") {
 		fmt.Fprintf(os.Stderr, "warning: overwriting locale environment variable: %s\n", name)
 	}
+	return nil
 }
 
 // executeCommand runs the command with secrets in environment
 func executeCommand(args []string, env []string, secrets []secretData) error {
-	// Prevent core dumps to protect secrets in memory
+	// Prevent core dumps to protect secrets in memory (security requirement)
 	if err := disableCoreDumps(); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to disable core dumps: %v\n", err)
+		return fmt.Errorf("security: failed to disable core dumps (secrets could leak to disk): %w", err)
 	}
 
 	// Create context with timeout
@@ -325,6 +342,9 @@ func executeCommand(args []string, env []string, secrets []secretData) error {
 		return cmd.Process.Signal(syscall.SIGTERM)
 	}
 	cmd.WaitDelay = 5 * time.Second // Wait 5s after SIGTERM before SIGKILL
+
+	// WaitGroup for output sanitizer goroutines
+	var outputWg sync.WaitGroup
 
 	// Set up I/O
 	if runNoSanitize {
@@ -349,9 +369,16 @@ func executeCommand(args []string, env []string, secrets []secretData) error {
 		// Build sanitizer
 		sanitizer := newOutputSanitizer(secrets)
 
-		// Start output copying goroutines
-		go sanitizer.copy(os.Stdout, stdoutPipe)
-		go sanitizer.copy(os.Stderr, stderrPipe)
+		// Start output copying goroutines with proper synchronization
+		outputWg.Add(2)
+		go func() {
+			defer outputWg.Done()
+			sanitizer.copy(os.Stdout, stdoutPipe)
+		}()
+		go func() {
+			defer outputWg.Done()
+			sanitizer.copy(os.Stderr, stderrPipe)
+		}()
 	}
 
 	// Set up signal forwarding
@@ -364,14 +391,23 @@ func executeCommand(args []string, env []string, secrets []secretData) error {
 		return fmt.Errorf("failed to start command: %w", err)
 	}
 
-	// Forward signals to child process
+	// Forward signals to child process with proper synchronization
 	done := make(chan struct{})
+	var sigWg sync.WaitGroup
+	sigWg.Add(1)
 	go func() {
+		defer sigWg.Done()
 		for {
 			select {
 			case sig := <-sigChan:
-				if cmd.Process != nil {
-					cmd.Process.Signal(sig)
+				// Check if done before attempting to signal
+				select {
+				case <-done:
+					return
+				default:
+					if cmd.Process != nil {
+						cmd.Process.Signal(sig)
+					}
 				}
 			case <-done:
 				return
@@ -383,11 +419,17 @@ func executeCommand(args []string, env []string, secrets []secretData) error {
 	err = cmd.Wait()
 	close(done)
 
+	// Wait for signal handler goroutine to exit
+	sigWg.Wait()
+
+	// Wait for all output to be processed
+	outputWg.Wait()
+
 	// Handle exit status
 	if err != nil {
 		// Check if it was a timeout
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return &exitError{code: ExitTimeout, err: fmt.Errorf("command timed out after %v", runTimeout)}
+			return &exitError{code: ExitTimeout, err: fmt.Errorf("command '%s' timed out after %v", args[0], runTimeout)}
 		}
 
 		// Check for exit error
@@ -428,30 +470,104 @@ func (e *exitError) ExitCode() int {
 }
 
 // outputSanitizer sanitizes output by replacing secret values
+// It handles buffer boundaries by keeping an overlap buffer to detect
+// secrets that span across read boundaries.
 type outputSanitizer struct {
-	secrets []secretData
+	secrets      []secretData
+	maxSecretLen int                 // Length of longest secret (for overlap calculation)
+	replacements []secretReplacement // Pre-computed replacements for efficiency
+}
+
+// secretReplacement holds pre-computed replacement data
+type secretReplacement struct {
+	secret      []byte
+	placeholder []byte
 }
 
 func newOutputSanitizer(secrets []secretData) *outputSanitizer {
-	return &outputSanitizer{secrets: secrets}
+	maxLen := 0
+	var replacements []secretReplacement
+
+	for _, secret := range secrets {
+		// Only sanitize values >= 4 bytes to avoid false positives
+		if len(secret.value) >= 4 {
+			if len(secret.value) > maxLen {
+				maxLen = len(secret.value)
+			}
+			replacements = append(replacements, secretReplacement{
+				secret:      secret.value,
+				placeholder: []byte(fmt.Sprintf("[REDACTED:%s]", keyToEnvName(secret.key))),
+			})
+		}
+	}
+
+	return &outputSanitizer{
+		secrets:      secrets,
+		maxSecretLen: maxLen,
+		replacements: replacements,
+	}
 }
 
 // copy reads from src, sanitizes, and writes to dst
+// It maintains an overlap buffer to handle secrets spanning read boundaries.
 func (s *outputSanitizer) copy(dst io.Writer, src io.Reader) {
 	buf := make([]byte, 32*1024) // 32KB buffer
+	var overlap []byte           // Buffer to hold potential partial secret from previous read
+
 	for {
-		n, err := src.Read(buf)
+		n, readErr := src.Read(buf)
 		if n > 0 {
-			data := buf[:n]
+			// Combine overlap from previous read with new data
+			var data []byte
+			if len(overlap) > 0 {
+				data = make([]byte, len(overlap)+n)
+				copy(data, overlap)
+				copy(data[len(overlap):], buf[:n])
+			} else {
+				data = buf[:n]
+			}
 
 			// Skip sanitization for binary output (contains NUL)
-			if !bytes.Contains(data, []byte{0x00}) {
+			isBinary := bytes.Contains(data, []byte{0x00})
+			if !isBinary {
 				data = s.sanitize(data)
 			}
 
-			dst.Write(data)
+			// Calculate how much to write and how much to keep for overlap
+			var writeLen int
+			if readErr == nil && s.maxSecretLen > 1 && !isBinary {
+				// Keep (maxSecretLen - 1) bytes for next iteration to catch boundary-spanning secrets
+				overlapLen := s.maxSecretLen - 1
+				if overlapLen > len(data) {
+					overlapLen = len(data)
+				}
+				writeLen = len(data) - overlapLen
+				if writeLen < 0 {
+					writeLen = 0
+				}
+			} else {
+				// Last read or binary data - write everything
+				writeLen = len(data)
+			}
+
+			if writeLen > 0 {
+				dst.Write(data[:writeLen])
+			}
+
+			// Save remaining data for next iteration
+			if writeLen < len(data) {
+				overlap = make([]byte, len(data)-writeLen)
+				copy(overlap, data[writeLen:])
+			} else {
+				overlap = nil
+			}
 		}
-		if err != nil {
+
+		if readErr != nil {
+			// Write any remaining overlap on EOF
+			if len(overlap) > 0 {
+				dst.Write(overlap)
+			}
 			break
 		}
 	}
@@ -460,12 +576,8 @@ func (s *outputSanitizer) copy(dst io.Writer, src io.Reader) {
 // sanitize replaces secret values with [REDACTED:key]
 func (s *outputSanitizer) sanitize(data []byte) []byte {
 	result := data
-	for _, secret := range s.secrets {
-		// Only sanitize values >= 4 bytes to avoid false positives
-		if len(secret.value) >= 4 {
-			placeholder := []byte(fmt.Sprintf("[REDACTED:%s]", keyToEnvName(secret.key)))
-			result = bytes.ReplaceAll(result, secret.value, placeholder)
-		}
+	for _, r := range s.replacements {
+		result = bytes.ReplaceAll(result, r.secret, r.placeholder)
 	}
 	return result
 }
