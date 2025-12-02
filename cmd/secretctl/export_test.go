@@ -70,6 +70,11 @@ func TestEscapeEnvValue(t *testing.T) {
 			expected: `"hello\$world"`,
 		},
 		{
+			name:     "value with equals",
+			input:    "hello=world",
+			expected: `"hello=world"`,
+		},
+		{
 			name:     "complex value",
 			input:    `pass word "with" $pecial\chars`,
 			expected: `"pass word \"with\" \$pecial\\chars"`,
@@ -225,7 +230,7 @@ func TestWriteSecureFile(t *testing.T) {
 		path := filepath.Join(tmpDir, "test.env")
 		content := "TEST=value"
 
-		err := writeSecureFile(path, content)
+		err := writeSecureFile(path, content, false)
 		if err != nil {
 			t.Fatalf("writeSecureFile failed: %v", err)
 		}
@@ -255,7 +260,7 @@ func TestWriteSecureFile(t *testing.T) {
 		path := filepath.Join(tmpDir, "subdir", "nested", "test.json")
 		content := `{"key": "value"}`
 
-		err := writeSecureFile(path, content)
+		err := writeSecureFile(path, content, false)
 		if err != nil {
 			t.Fatalf("writeSecureFile to nested path failed: %v", err)
 		}
@@ -276,7 +281,7 @@ func TestWriteSecureFile(t *testing.T) {
 		path := "current.env"
 		content := "CURRENT=true"
 
-		err := writeSecureFile(path, content)
+		err := writeSecureFile(path, content, false)
 		if err != nil {
 			t.Fatalf("writeSecureFile to current dir failed: %v", err)
 		}
@@ -287,6 +292,146 @@ func TestWriteSecureFile(t *testing.T) {
 			t.Fatalf("file in current dir not created: %v", err)
 		}
 	})
+}
+
+// Security tests
+
+func TestWriteSecureFileOverwriteProtection(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "existing.env")
+
+	// Create existing file
+	if err := os.WriteFile(path, []byte("old content"), 0600); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	t.Run("refuse overwrite without force", func(t *testing.T) {
+		err := writeSecureFile(path, "new content", false)
+		if err == nil {
+			t.Error("expected error when overwriting without force")
+		}
+		if !strings.Contains(err.Error(), "file already exists") {
+			t.Errorf("expected 'file already exists' error, got: %v", err)
+		}
+
+		// Verify original content unchanged
+		data, _ := os.ReadFile(path)
+		if string(data) != "old content" {
+			t.Error("file content was changed without force flag")
+		}
+	})
+
+	t.Run("allow overwrite with force", func(t *testing.T) {
+		err := writeSecureFile(path, "new content", true)
+		if err != nil {
+			t.Fatalf("writeSecureFile with force failed: %v", err)
+		}
+
+		// Verify new content
+		data, _ := os.ReadFile(path)
+		if string(data) != "new content" {
+			t.Errorf("file content = %q, want 'new content'", string(data))
+		}
+	})
+}
+
+func TestWriteSecureFileSymlinkProtection(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create target file
+	targetPath := filepath.Join(tmpDir, "target.txt")
+	if err := os.WriteFile(targetPath, []byte("target content"), 0600); err != nil {
+		t.Fatalf("failed to create target file: %v", err)
+	}
+
+	// Create symlink
+	symlinkPath := filepath.Join(tmpDir, "symlink.env")
+	if err := os.Symlink(targetPath, symlinkPath); err != nil {
+		t.Skipf("symlink creation not supported: %v", err)
+	}
+
+	t.Run("refuse write to symlink", func(t *testing.T) {
+		err := writeSecureFile(symlinkPath, "malicious content", false)
+		if err == nil {
+			t.Error("expected error when writing to symlink")
+		}
+		if !strings.Contains(err.Error(), "symlink") {
+			t.Errorf("expected symlink error, got: %v", err)
+		}
+
+		// Verify target file unchanged
+		data, _ := os.ReadFile(targetPath)
+		if string(data) != "target content" {
+			t.Error("symlink target was modified")
+		}
+	})
+
+	t.Run("refuse write to symlink even with force", func(t *testing.T) {
+		err := writeSecureFile(symlinkPath, "malicious content", true)
+		if err == nil {
+			t.Error("expected error when writing to symlink even with force")
+		}
+	})
+}
+
+func TestWriteSecureFileSystemDirectoryProtection(t *testing.T) {
+	// Test that we refuse to write to sensitive system directories
+	sensitivePaths := []string{
+		"/etc/passwd",
+		"/usr/local/test.env",
+		"/var/log/test.env",
+		"/var/run/test.env",
+	}
+
+	for _, path := range sensitivePaths {
+		t.Run("refuse_"+strings.ReplaceAll(path, "/", "_"), func(t *testing.T) {
+			err := writeSecureFile(path, "content", false)
+			if err == nil {
+				t.Errorf("expected error for sensitive path: %s", path)
+			}
+			if !strings.Contains(err.Error(), "security") && !strings.Contains(err.Error(), "permission") {
+				// Either security check or permission denied is acceptable
+				t.Logf("got error (expected): %v", err)
+			}
+		})
+	}
+}
+
+func TestWriteSecureFileAllowsUserDirectories(t *testing.T) {
+	// Ensure we don't block legitimate directories like /var/folders (macOS temp)
+	// and user home directories
+	tmpDir := t.TempDir() // Uses system temp which may be under /var/folders on macOS
+
+	path := filepath.Join(tmpDir, "allowed.env")
+	err := writeSecureFile(path, "ALLOWED=true", false)
+	if err != nil {
+		t.Errorf("should allow writing to temp directory: %v", err)
+	}
+}
+
+func TestWriteSecureFileDirectoryPermissions(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a subdirectory with weak permissions
+	weakDir := filepath.Join(tmpDir, "weak")
+	if err := os.MkdirAll(weakDir, 0755); err != nil {
+		t.Fatalf("failed to create weak dir: %v", err)
+	}
+
+	path := filepath.Join(weakDir, "secret.env")
+	err := writeSecureFile(path, "SECRET=value", false)
+	if err != nil {
+		t.Fatalf("writeSecureFile failed: %v", err)
+	}
+
+	// Verify directory permissions were tightened
+	info, err := os.Stat(weakDir)
+	if err != nil {
+		t.Fatalf("failed to stat directory: %v", err)
+	}
+	if info.Mode().Perm() != 0700 {
+		t.Errorf("directory permissions = %o, want 0700", info.Mode().Perm())
+	}
 }
 
 func TestExportSecretDataStruct(t *testing.T) {

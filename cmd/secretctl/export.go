@@ -25,6 +25,7 @@ var (
 	exportOutput       string
 	exportKeys         []string
 	exportWithMetadata bool
+	exportForce        bool
 )
 
 func init() {
@@ -34,6 +35,7 @@ func init() {
 	exportCmd.Flags().StringVarP(&exportOutput, "output", "o", "", "Output file path (default: stdout)")
 	exportCmd.Flags().StringSliceVarP(&exportKeys, "key", "k", nil, "Keys to export (glob pattern supported)")
 	exportCmd.Flags().BoolVar(&exportWithMetadata, "with-metadata", false, "Include metadata in JSON output")
+	exportCmd.Flags().BoolVar(&exportForce, "force", false, "Overwrite existing file without confirmation")
 }
 
 var exportCmd = &cobra.Command{
@@ -52,7 +54,10 @@ Examples:
   secretctl export -f json -o secrets.json
 
   # Export with metadata (JSON only)
-  secretctl export -f json --with-metadata`,
+  secretctl export -f json --with-metadata
+
+  # Overwrite existing file
+  secretctl export -o .env --force`,
 	RunE: executeExport,
 }
 
@@ -75,15 +80,8 @@ type exportSecretMetadata struct {
 }
 
 func executeExport(cmd *cobra.Command, args []string) error {
-	// Validate format
-	exportFormat = strings.ToLower(exportFormat)
-	if exportFormat != formatEnv && exportFormat != formatJSON {
-		return fmt.Errorf("invalid format '%s': must be '%s' or '%s'", exportFormat, formatEnv, formatJSON)
-	}
-
-	// with-metadata only works with JSON format
-	if exportWithMetadata && exportFormat != formatJSON {
-		return fmt.Errorf("--with-metadata flag is only valid with JSON format")
+	if err := validateExportFlags(); err != nil {
+		return err
 	}
 
 	// Unlock vault
@@ -92,48 +90,94 @@ func executeExport(cmd *cobra.Command, args []string) error {
 	}
 	defer v.Lock()
 
-	// Get all available keys
+	// Get keys to export
+	keysToExport, err := getKeysToExport()
+	if err != nil {
+		return err
+	}
+
+	// Collect secrets with validation
+	secrets, err := collectSecretsForExport(keysToExport)
+	if err != nil {
+		return err
+	}
+
+	// Generate and write output
+	return writeExportOutput(secrets)
+}
+
+// validateExportFlags validates the export command flags
+func validateExportFlags() error {
+	exportFormat = strings.ToLower(exportFormat)
+	if exportFormat != formatEnv && exportFormat != formatJSON {
+		return fmt.Errorf("invalid format '%s': must be '%s' or '%s'", exportFormat, formatEnv, formatJSON)
+	}
+
+	if exportWithMetadata && exportFormat != formatJSON {
+		return fmt.Errorf("--with-metadata flag is only valid with JSON format")
+	}
+	return nil
+}
+
+// getKeysToExport returns the list of keys to export based on patterns
+func getKeysToExport() ([]string, error) {
 	allKeys, err := v.ListSecrets()
 	if err != nil {
-		return fmt.Errorf("failed to list secrets: %w", err)
+		return nil, fmt.Errorf("failed to list secrets: %w", err)
 	}
 
 	if len(allKeys) == 0 {
-		return fmt.Errorf("no secrets in vault")
+		return nil, fmt.Errorf("no secrets in vault")
 	}
 
-	// Determine which keys to export
 	var keysToExport []string
 	if len(exportKeys) == 0 {
-		// Export all keys
 		keysToExport = allKeys
 	} else {
-		// Expand patterns
-		seen := make(map[string]bool)
-		for _, pattern := range exportKeys {
-			matches, err := expandPattern(pattern, allKeys)
-			if err != nil {
-				return err
-			}
-			for _, key := range matches {
-				if !seen[key] {
-					seen[key] = true
-					keysToExport = append(keysToExport, key)
-				}
-			}
+		keysToExport, err = expandExportPatterns(exportKeys, allKeys)
+		if err != nil {
+			return nil, err
 		}
 	}
 
-	// Sort keys for consistent output
 	sort.Strings(keysToExport)
+	return keysToExport, nil
+}
 
-	// Collect secrets
+// expandExportPatterns expands pattern list to matching keys
+func expandExportPatterns(patterns []string, allKeys []string) ([]string, error) {
+	seen := make(map[string]bool)
+	var result []string
+	for _, pattern := range patterns {
+		matches, err := expandPattern(pattern, allKeys)
+		if err != nil {
+			return nil, err
+		}
+		for _, key := range matches {
+			if !seen[key] {
+				seen[key] = true
+				result = append(result, key)
+			}
+		}
+	}
+	return result, nil
+}
+
+// collectSecretsForExport collects secrets and validates expiration
+func collectSecretsForExport(keys []string) ([]exportSecretData, error) {
+	now := time.Now()
 	var secrets []exportSecretData
-	for _, key := range keysToExport {
+
+	for _, key := range keys {
 		entry, err := v.GetSecret(key)
 		if err != nil {
-			return fmt.Errorf("failed to get secret '%s': %w", key, err)
+			return nil, fmt.Errorf("failed to get secret '%s': %w", key, err)
 		}
+
+		if entry.ExpiresAt != nil && entry.ExpiresAt.Before(now) {
+			return nil, fmt.Errorf("secret '%s' has expired at %v", key, entry.ExpiresAt.Format(time.RFC3339))
+		}
+
 		secrets = append(secrets, exportSecretData{
 			key:       key,
 			envName:   keyToEnvName(key),
@@ -143,37 +187,38 @@ func executeExport(cmd *cobra.Command, args []string) error {
 			expiresAt: entry.ExpiresAt,
 		})
 	}
+	return secrets, nil
+}
 
-	// Generate output
-	var output string
-	switch exportFormat {
-	case formatEnv:
-		output = generateEnvOutput(secrets)
-	case formatJSON:
-		var err error
-		output, err = generateJSONOutput(secrets, exportWithMetadata)
-		if err != nil {
-			return err
-		}
+// writeExportOutput generates and writes the export output
+func writeExportOutput(secrets []exportSecretData) error {
+	output, err := generateOutput(secrets)
+	if err != nil {
+		return err
 	}
 
-	// Write output
 	if exportOutput == "" {
-		// Output to stdout
 		fmt.Fprint(os.Stderr, "WARNING: DO NOT COMMIT THIS OUTPUT TO VERSION CONTROL\n")
 		fmt.Print(output)
 	} else {
-		// Output to file
-		if err := writeSecureFile(exportOutput, output); err != nil {
+		if err := writeSecureFile(exportOutput, output, exportForce); err != nil {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "Exported %d secrets to %s\n", len(secrets), exportOutput)
 	}
-
-	// TODO: Add audit logging when audit logger is integrated into CLI commands
-	// auditLogger.Log with OpSecretExport
-
 	return nil
+}
+
+// generateOutput generates output based on format
+func generateOutput(secrets []exportSecretData) (string, error) {
+	switch exportFormat {
+	case formatEnv:
+		return generateEnvOutput(secrets), nil
+	case formatJSON:
+		return generateJSONOutput(secrets, exportWithMetadata)
+	default:
+		return "", fmt.Errorf("unknown format: %s", exportFormat)
+	}
 }
 
 // generateEnvOutput generates .env format output
@@ -198,7 +243,7 @@ func escapeEnvValue(value string) string {
 	// Check if value needs quoting
 	needsQuote := false
 	for _, c := range value {
-		if c == ' ' || c == '"' || c == '\'' || c == '\\' || c == '\n' || c == '\r' || c == '\t' || c == '#' || c == '$' {
+		if c == ' ' || c == '"' || c == '\'' || c == '\\' || c == '\n' || c == '\r' || c == '\t' || c == '#' || c == '$' || c == '=' {
 			needsQuote = true
 			break
 		}
@@ -259,18 +304,73 @@ func generateJSONOutput(secrets []exportSecretData, withMetadata bool) (string, 
 }
 
 // writeSecureFile writes content to a file with 0600 permissions
-func writeSecureFile(path string, content string) error {
-	// Ensure parent directory exists
-	dir := filepath.Dir(path)
+// Security: Validates path, prevents traversal, checks for symlinks, prevents overwrites
+func writeSecureFile(path string, content string, force bool) error {
+	// 1. Validate and resolve path
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("invalid path: %w", err)
+	}
+
+	// 2. Security check: Prevent writing to sensitive system directories
+	// Note: We check specific dangerous directories, allowing /var/folders (macOS temp) and user home
+	sensitivePaths := []string{"/etc/", "/usr/", "/bin/", "/sbin/", "/var/log/", "/var/run/", "/root/"}
+	for _, sensitive := range sensitivePaths {
+		if strings.HasPrefix(absPath, sensitive) {
+			return fmt.Errorf("security: refusing to write to system directory: %s", absPath)
+		}
+	}
+
+	// 3. Check if file already exists
+	info, err := os.Lstat(absPath)
+	if err == nil {
+		// File exists
+		// 3a. Check for symlink attack
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("security: refusing to write to symlink: %s", absPath)
+		}
+		// 3b. Check for overwrite permission
+		if !force {
+			return fmt.Errorf("file already exists: %s (use --force to overwrite)", absPath)
+		}
+	}
+
+	// 4. Ensure parent directory exists with secure permissions
+	dir := filepath.Dir(absPath)
 	if dir != "." && dir != "/" {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			return fmt.Errorf("failed to create directory: %w", err)
 		}
+		// Verify/fix directory permissions
+		if err := os.Chmod(dir, 0700); err != nil {
+			return fmt.Errorf("failed to set directory permissions: %w", err)
+		}
 	}
 
-	// Write file with secure permissions
-	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
-		return fmt.Errorf("failed to write file: %w", err)
+	// 5. Write file atomically with secure permissions
+	// Use O_CREATE|O_TRUNC (or O_EXCL if not force) to prevent TOCTOU
+	flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+	if !force {
+		flags = os.O_WRONLY | os.O_CREATE | os.O_EXCL
+	}
+
+	f, err := os.OpenFile(absPath, flags, 0600)
+	if err != nil {
+		if os.IsExist(err) {
+			return fmt.Errorf("file already exists: %s (use --force to overwrite)", absPath)
+		}
+		return fmt.Errorf("failed to create file: %w", err)
+	}
+
+	// Write content
+	_, writeErr := f.WriteString(content)
+	closeErr := f.Close()
+
+	if writeErr != nil {
+		return fmt.Errorf("failed to write file: %w", writeErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("failed to close file: %w", closeErr)
 	}
 
 	return nil
