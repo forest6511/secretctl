@@ -93,7 +93,7 @@ func executeGenerate(cmd *cobra.Command, args []string) error {
 	for i := 0; i < generateCount; i++ {
 		password, err := generatePassword(charset, generateLength)
 		if err != nil {
-			return fmt.Errorf("failed to generate password: %w", err)
+			return fmt.Errorf("failed to generate password %d/%d: %w", i+1, generateCount, err)
 		}
 		passwords[i] = password
 	}
@@ -103,10 +103,13 @@ func executeGenerate(cmd *cobra.Command, args []string) error {
 		fmt.Println(password)
 	}
 
-	// Copy to clipboard if requested
+	// Copy to clipboard if requested (best-effort, non-blocking)
 	if generateCopy && len(passwords) > 0 {
+		fmt.Fprintln(os.Stderr, "WARNING: Password copied to clipboard is accessible by all processes")
+		fmt.Fprintln(os.Stderr, "         Clipboard will not be automatically cleared. Overwrite manually when done.")
 		if err := copyToClipboard(passwords[0]); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to copy to clipboard: %v\n", err)
+			fmt.Fprintln(os.Stderr, "         Password is still printed above")
 		} else {
 			fmt.Fprintln(os.Stderr, "Password copied to clipboard")
 		}
