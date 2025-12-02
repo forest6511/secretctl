@@ -43,6 +43,7 @@ const (
 	OpSecretGetMasked = "secret.get_masked"
 	OpSecretRun       = "secret.run"
 	OpSecretRunDenied = "secret.run_denied"
+	OpSecretExport    = "secret.export"
 
 	// Session operations (Phase 3+)
 	OpSessionStart = "session.start"
