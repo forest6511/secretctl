@@ -598,6 +598,276 @@ func (l *Logger) Path() string {
 	return l.path
 }
 
+// Export exports audit events in the specified format (json or csv)
+// since and until filter events by timestamp (zero values mean no filter)
+func (l *Logger) Export(format string, since, until time.Time) ([]byte, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	// Read all log files
+	files, err := filepath.Glob(filepath.Join(l.path, "*.jsonl"))
+	if err != nil {
+		return nil, fmt.Errorf("audit: failed to list log files: %w", err)
+	}
+
+	// Sort files by name (chronological order)
+	sortStrings(files)
+
+	var allEvents []AuditEvent
+	for _, file := range files {
+		events, err := l.readLogFile(file)
+		if err != nil {
+			return nil, fmt.Errorf("audit: failed to read %s: %w", file, err)
+		}
+		allEvents = append(allEvents, events...)
+	}
+
+	// Filter by time range
+	var filtered []AuditEvent
+	for _, event := range allEvents {
+		eventTime, err := time.Parse(time.RFC3339Nano, event.Timestamp)
+		if err != nil {
+			continue // Skip events with invalid timestamps
+		}
+
+		// Apply since filter
+		if !since.IsZero() && eventTime.Before(since) {
+			continue
+		}
+
+		// Apply until filter
+		if !until.IsZero() && eventTime.After(until) {
+			continue
+		}
+
+		filtered = append(filtered, event)
+	}
+
+	// Format output
+	switch format {
+	case "csv":
+		return l.formatCSV(filtered), nil
+	case "json":
+		return l.formatJSON(filtered)
+	default:
+		return nil, fmt.Errorf("audit: unsupported format: %s", format)
+	}
+}
+
+// formatJSON formats events as JSON array
+func (l *Logger) formatJSON(events []AuditEvent) ([]byte, error) {
+	return json.MarshalIndent(events, "", "  ")
+}
+
+// formatCSV formats events as CSV with proper escaping
+func (l *Logger) formatCSV(events []AuditEvent) []byte {
+	var result []byte
+
+	// Header
+	result = append(result, []byte("timestamp,operation,result,key_hash\n")...)
+
+	// Data rows
+	for _, event := range events {
+		keyHash := event.Key
+		if len(keyHash) > 16 {
+			keyHash = keyHash[:16] + "..."
+		}
+		// Escape fields to prevent CSV injection
+		line := fmt.Sprintf("%s,%s,%s,%s\n",
+			csvEscape(event.Timestamp),
+			csvEscape(event.Operation),
+			csvEscape(event.Result),
+			csvEscape(keyHash),
+		)
+		result = append(result, []byte(line)...)
+	}
+
+	return result
+}
+
+// csvEscape escapes a field for CSV output to prevent injection attacks
+func csvEscape(field string) string {
+	if field == "" {
+		return field
+	}
+
+	// Check if field needs quoting
+	// Also quote fields starting with =, +, -, @ to prevent formula injection
+	needsQuoting := false
+	firstChar := field[0]
+	if firstChar == '=' || firstChar == '+' || firstChar == '-' || firstChar == '@' {
+		needsQuoting = true
+	}
+
+	if !needsQuoting {
+		for _, c := range field {
+			if c == ',' || c == '"' || c == '\n' || c == '\r' {
+				needsQuoting = true
+				break
+			}
+		}
+	}
+
+	if !needsQuoting {
+		return field
+	}
+
+	// Quote the field and escape any double quotes
+	var escaped []byte
+	escaped = append(escaped, '"')
+	for _, c := range field {
+		if c == '"' {
+			escaped = append(escaped, '"', '"') // Escape double quote with double quote
+		} else {
+			escaped = append(escaped, byte(c))
+		}
+	}
+	escaped = append(escaped, '"')
+	return string(escaped)
+}
+
+// Prune deletes audit log entries older than the specified duration
+// Returns the number of deleted entries
+func (l *Logger) Prune(olderThan time.Duration) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	cutoff := time.Now().Add(-olderThan)
+
+	// Read all log files
+	files, err := filepath.Glob(filepath.Join(l.path, "*.jsonl"))
+	if err != nil {
+		return 0, fmt.Errorf("audit: failed to list log files: %w", err)
+	}
+
+	sortStrings(files)
+
+	deletedCount := 0
+
+	for _, file := range files {
+		events, err := l.readLogFile(file)
+		if err != nil {
+			return deletedCount, fmt.Errorf("audit: failed to read %s: %w", file, err)
+		}
+
+		// Check if all events in this file are older than cutoff
+		allOld := true
+		for _, event := range events {
+			eventTime, err := time.Parse(time.RFC3339Nano, event.Timestamp)
+			if err != nil {
+				continue
+			}
+			if eventTime.After(cutoff) {
+				allOld = false
+				break
+			}
+		}
+
+		if allOld && len(events) > 0 {
+			// Delete entire file
+			if err := os.Remove(file); err != nil {
+				return deletedCount, fmt.Errorf("audit: failed to delete %s: %w", file, err)
+			}
+			deletedCount += len(events)
+		} else if !allOld {
+			// Need to filter events within the file
+			var remaining []AuditEvent
+			for _, event := range events {
+				eventTime, err := time.Parse(time.RFC3339Nano, event.Timestamp)
+				if err != nil {
+					remaining = append(remaining, event)
+					continue
+				}
+				if eventTime.After(cutoff) {
+					remaining = append(remaining, event)
+				} else {
+					deletedCount++
+				}
+			}
+
+			// Rewrite file with remaining events
+			if len(remaining) == 0 {
+				if err := os.Remove(file); err != nil {
+					return deletedCount, fmt.Errorf("audit: failed to delete %s: %w", file, err)
+				}
+			} else {
+				if err := l.rewriteLogFile(file, remaining); err != nil {
+					return deletedCount, fmt.Errorf("audit: failed to rewrite %s: %w", file, err)
+				}
+			}
+		}
+	}
+
+	return deletedCount, nil
+}
+
+// PrunePreview returns the count of entries that would be deleted
+// without actually deleting them (for --dry-run)
+func (l *Logger) PrunePreview(olderThan time.Duration) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	cutoff := time.Now().Add(-olderThan)
+
+	// Read all log files
+	files, err := filepath.Glob(filepath.Join(l.path, "*.jsonl"))
+	if err != nil {
+		return 0, fmt.Errorf("audit: failed to list log files: %w", err)
+	}
+
+	count := 0
+	for _, file := range files {
+		events, err := l.readLogFile(file)
+		if err != nil {
+			return 0, fmt.Errorf("audit: failed to read %s: %w", file, err)
+		}
+
+		for _, event := range events {
+			eventTime, err := time.Parse(time.RFC3339Nano, event.Timestamp)
+			if err != nil {
+				continue
+			}
+			if eventTime.Before(cutoff) {
+				count++
+			}
+		}
+	}
+
+	return count, nil
+}
+
+// rewriteLogFile rewrites a log file with the given events
+func (l *Logger) rewriteLogFile(path string, events []AuditEvent) error {
+	// Write to temp file first
+	tempPath := path + ".tmp"
+	f, err := os.OpenFile(tempPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+
+	for _, event := range events {
+		data, err := json.Marshal(event)
+		if err != nil {
+			f.Close()
+			os.Remove(tempPath)
+			return err
+		}
+		if _, err := f.Write(append(data, '\n')); err != nil {
+			f.Close()
+			os.Remove(tempPath)
+			return err
+		}
+	}
+
+	if err := f.Close(); err != nil {
+		os.Remove(tempPath)
+		return err
+	}
+
+	// Atomic rename
+	return os.Rename(tempPath, path)
+}
+
 // checkDiskSpace verifies sufficient disk space for audit log writes
 func (l *Logger) checkDiskSpace() error {
 	var stat syscall.Statfs_t
