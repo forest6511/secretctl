@@ -81,6 +81,7 @@ secretctl delete OPENAI_API_KEY
 - **Argon2id key derivation** — Memory-hard protection against brute force
 - **SQLite storage** — Reliable, portable, no external dependencies
 - **Audit logging** — HMAC-chained logs for tamper detection
+- **AI-safe by design** — MCP integration never exposes plaintext secrets to AI agents
 
 ### Metadata Support
 
@@ -104,6 +105,58 @@ secretctl list --expiring=7d
 secretctl get API_KEY --show-metadata
 ```
 
+### Run Commands with Secrets
+
+Inject secrets as environment variables without exposing them in your shell history:
+
+```bash
+# Run a command with a single secret
+secretctl run -k API_KEY -- curl -H "Authorization: Bearer $API_KEY" https://api.example.com
+
+# Use wildcards to inject multiple secrets
+# Pattern aws/* matches aws/access_key, aws/secret_key (single level)
+secretctl run -k "aws/*" -- aws s3 ls
+
+# Output is automatically sanitized to prevent secret leakage
+secretctl run -k DB_PASSWORD -- ./deploy.sh
+# If deploy.sh prints DB_PASSWORD, it appears as [REDACTED:DB_PASSWORD]
+
+# With timeout and prefix
+secretctl run -k API_KEY --timeout=30s --env-prefix=APP_ -- ./app
+```
+
+> **Note**: Output sanitization uses exact string matching. Encoded secrets (Base64, hex) or partial matches are not detected.
+
+### Export Secrets
+
+Export secrets for use with Docker, CI/CD, or other tools:
+
+```bash
+# Export as .env file (default)
+secretctl export -o .env
+
+# Export specific keys as JSON
+secretctl export --format=json -k "db/*" -o config.json
+
+# Export to stdout for piping
+secretctl export --format=json | jq '.DB_HOST'
+```
+
+### Generate Passwords
+
+Create secure random passwords:
+
+```bash
+# Generate a 24-character password (default)
+secretctl generate
+
+# Generate a 32-character password without symbols
+secretctl generate -l 32 --no-symbols
+
+# Generate multiple passwords
+secretctl generate -n 5
+```
+
 ### Audit Log
 
 ```bash
@@ -112,6 +165,12 @@ secretctl audit list --limit=50
 
 # Verify log integrity
 secretctl audit verify
+
+# Export audit logs
+secretctl audit export --format=csv -o audit.csv
+
+# Prune old logs (preview first)
+secretctl audit prune --older-than=12m --dry-run
 ```
 
 ## Security
@@ -124,6 +183,7 @@ secretctl takes security seriously:
 - **Secure file permissions** — Vault files are created with 0600 permissions
 - **No network access** — Completely offline operation
 - **Tamper-evident logs** — HMAC chain detects any log manipulation
+- **Output sanitization** — Automatic redaction of secrets in command output
 
 For reporting security vulnerabilities, please see [SECURITY.md](SECURITY.md).
 
