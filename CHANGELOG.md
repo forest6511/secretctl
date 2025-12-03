@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2025-12-03
+
+### Added
+- **`run` command** - Execute commands with secrets injected as environment variables
+  - Wildcard key patterns (`-k "aws/*"`)
+  - Output sanitization to prevent secret leakage in stdout/stderr
+  - Configurable timeout (`--timeout`)
+  - Environment variable prefix support (`--env-prefix`)
+- **`export` command** - Export secrets to file or stdout
+  - `.env` format (default)
+  - JSON format (`--format=json`)
+  - Key filtering with glob patterns (`-k "db/*"`)
+- **`generate` command** - Generate secure random passwords
+  - Configurable length (`-l`, default 24)
+  - Character set options (`--no-symbols`, `--no-numbers`, etc.)
+  - Multiple password generation (`-n`)
+- **`audit export` command** - Export audit logs
+  - JSON and CSV formats
+  - Time range filtering (`--since`, `--until`)
+- **`audit prune` command** - Delete old audit logs
+  - Dry-run mode (`--dry-run`)
+  - Configurable retention (`--older-than`)
+
+### Security
+- Output sanitization detects and redacts secrets in command output
+- Path traversal protection for export file paths
+- CSV injection prevention in audit export
+
+## [0.1.0] - 2025-12-01
+
 ### Added
 - Core vault implementation with AES-256-GCM encryption
 - Argon2id key derivation for master password
