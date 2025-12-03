@@ -68,6 +68,21 @@ var (
 	auditSince string
 )
 
+// Audit export flags
+var (
+	auditExportFormat string
+	auditExportSince  string
+	auditExportUntil  string
+	auditExportOutput string
+)
+
+// Audit prune flags
+var (
+	auditPruneOlderThan string
+	auditPruneDryRun    bool
+	auditPruneForce     bool
+)
+
 func init() {
 	// Add subcommands to rootCmd
 	rootCmd.AddCommand(initCmd)
@@ -93,10 +108,23 @@ func init() {
 	// Add audit subcommands
 	auditCmd.AddCommand(auditListCmd)
 	auditCmd.AddCommand(auditVerifyCmd)
+	auditCmd.AddCommand(auditExportCmd)
+	auditCmd.AddCommand(auditPruneCmd)
 
 	// Add flags to audit list
 	auditListCmd.Flags().IntVar(&auditLimit, "limit", 100, "Maximum number of events to show")
 	auditListCmd.Flags().StringVar(&auditSince, "since", "", "Show events since duration (e.g., 24h)")
+
+	// Add flags to audit export
+	auditExportCmd.Flags().StringVar(&auditExportFormat, "format", "json", "Output format: json, csv")
+	auditExportCmd.Flags().StringVar(&auditExportSince, "since", "", "Export events since duration (e.g., 30d)")
+	auditExportCmd.Flags().StringVar(&auditExportUntil, "until", "", "Export events until date (RFC 3339)")
+	auditExportCmd.Flags().StringVarP(&auditExportOutput, "output", "o", "", "Output file path (default: stdout)")
+
+	// Add flags to audit prune
+	auditPruneCmd.Flags().StringVar(&auditPruneOlderThan, "older-than", "", "Delete logs older than duration (e.g., 12m for 12 months)")
+	auditPruneCmd.Flags().BoolVar(&auditPruneDryRun, "dry-run", false, "Show what would be deleted without deleting")
+	auditPruneCmd.Flags().BoolVarP(&auditPruneForce, "force", "f", false, "Skip confirmation prompt")
 }
 
 // initCmd initializes a new vault
@@ -490,6 +518,157 @@ var auditVerifyCmd = &cobra.Command{
 		jsonResult, _ := json.Marshal(result)
 		fmt.Printf("\nJSON: %s\n", string(jsonResult))
 
+		return nil
+	},
+}
+
+// auditExportCmd exports audit logs
+var auditExportCmd = &cobra.Command{
+	Use:   "export",
+	Short: "Export audit logs to JSON or CSV format",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// 1. Unlock vault to access audit logs
+		if err := ensureUnlocked(); err != nil {
+			return err
+		}
+		defer v.Lock()
+
+		// 2. Validate format
+		if auditExportFormat != "json" && auditExportFormat != "csv" {
+			return fmt.Errorf("invalid format: %s (use 'json' or 'csv')", auditExportFormat)
+		}
+
+		// 3. Parse time filters
+		var since, until time.Time
+		if auditExportSince != "" {
+			duration, err := parseDuration(auditExportSince)
+			if err != nil {
+				return fmt.Errorf("invalid since format: %w", err)
+			}
+			since = time.Now().Add(-duration)
+		}
+		if auditExportUntil != "" {
+			var err error
+			until, err = time.Parse(time.RFC3339, auditExportUntil)
+			if err != nil {
+				return fmt.Errorf("invalid until format (use RFC 3339): %w", err)
+			}
+		}
+
+		// 4. Export events
+		data, err := v.AuditLogger().Export(auditExportFormat, since, until)
+		if err != nil {
+			return fmt.Errorf("failed to export audit logs: %w", err)
+		}
+
+		// 5. Output to file or stdout
+		if auditExportOutput != "" {
+			// Validate output path to prevent path traversal
+			absPath, err := filepath.Abs(auditExportOutput)
+			if err != nil {
+				return fmt.Errorf("invalid output path: %w", err)
+			}
+
+			// Get current working directory for validation
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("failed to get current directory: %w", err)
+			}
+
+			// Allow paths within: current directory, home directory, or /tmp
+			homeDir, _ := os.UserHomeDir()
+			validPrefixes := []string{cwd, homeDir, "/tmp"}
+			isValid := false
+			for _, prefix := range validPrefixes {
+				if strings.HasPrefix(absPath, prefix) {
+					isValid = true
+					break
+				}
+			}
+			if !isValid {
+				return fmt.Errorf("output path must be within current directory, home directory, or /tmp")
+			}
+
+			// Write to file with secure permissions
+			if err := os.WriteFile(absPath, data, 0600); err != nil {
+				return fmt.Errorf("failed to write output file: %w", err)
+			}
+			fmt.Fprintf(os.Stderr, "Warning: Exported audit logs contain key hashes and operation metadata.\n")
+			fmt.Fprintf(os.Stderr, "Audit logs exported to %s\n", absPath)
+		} else {
+			// Write to stdout
+			os.Stdout.Write(data)
+		}
+
+		return nil
+	},
+}
+
+// auditPruneCmd deletes old audit logs
+var auditPruneCmd = &cobra.Command{
+	Use:   "prune",
+	Short: "Delete old audit log entries",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// 1. Validate older-than flag
+		if auditPruneOlderThan == "" {
+			return fmt.Errorf("--older-than flag is required")
+		}
+
+		duration, err := parseDuration(auditPruneOlderThan)
+		if err != nil {
+			return fmt.Errorf("invalid older-than format: %w", err)
+		}
+
+		// 2. Unlock vault to access audit logs
+		if err := ensureUnlocked(); err != nil {
+			return err
+		}
+		defer v.Lock()
+
+		// 3. Dry-run mode
+		if auditPruneDryRun {
+			count, err := v.AuditLogger().PrunePreview(duration)
+			if err != nil {
+				return fmt.Errorf("failed to preview prune: %w", err)
+			}
+			fmt.Printf("Would delete %d audit log entries older than %s\n", count, auditPruneOlderThan)
+			return nil
+		}
+
+		// 4. Get preview count for confirmation
+		count, err := v.AuditLogger().PrunePreview(duration)
+		if err != nil {
+			return fmt.Errorf("failed to preview prune: %w", err)
+		}
+
+		if count == 0 {
+			fmt.Println("No audit log entries to delete")
+			return nil
+		}
+
+		// 5. Confirmation prompt (unless --force)
+		if !auditPruneForce {
+			fmt.Printf("This will delete %d audit log entries older than %s.\n", count, auditPruneOlderThan)
+			fmt.Print("Are you sure? [y/N]: ")
+			var response string
+			if _, err := fmt.Scanln(&response); err != nil {
+				// Treat read error as "no"
+				fmt.Println("Aborted")
+				return nil
+			}
+			if response != "y" && response != "Y" {
+				fmt.Println("Aborted")
+				return nil
+			}
+		}
+
+		// 6. Perform prune
+		deleted, err := v.AuditLogger().Prune(duration)
+		if err != nil {
+			return fmt.Errorf("failed to prune audit logs: %w", err)
+		}
+
+		fmt.Printf("Deleted %d audit log entries\n", deleted)
 		return nil
 	},
 }

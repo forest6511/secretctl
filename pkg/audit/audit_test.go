@@ -570,3 +570,242 @@ func TestListEvents(t *testing.T) {
 		t.Errorf("expected 1 secret.get, got %d", operations[OpSecretGet])
 	}
 }
+
+// TestExport tests the audit log export functionality
+func TestExport(t *testing.T) {
+	tmpDir := t.TempDir()
+	logger := NewLogger(tmpDir)
+
+	masterKey := make([]byte, 32)
+	if err := logger.SetHMACKey(masterKey); err != nil {
+		t.Fatalf("SetHMACKey failed: %v", err)
+	}
+
+	// Log some events
+	_ = logger.LogSuccess(OpSecretSet, SourceCLI, "key1")
+	_ = logger.LogSuccess(OpSecretGet, SourceMCP, "key2")
+	_ = logger.LogError(OpVaultUnlockFailed, SourceCLI, "", "AUTH_FAILED", "bad password")
+
+	t.Run("export JSON", func(t *testing.T) {
+		data, err := logger.Export("json", time.Time{}, time.Time{})
+		if err != nil {
+			t.Fatalf("Export JSON failed: %v", err)
+		}
+
+		var events []AuditEvent
+		if err := json.Unmarshal(data, &events); err != nil {
+			t.Fatalf("failed to parse JSON export: %v", err)
+		}
+
+		if len(events) != 3 {
+			t.Errorf("expected 3 events in JSON export, got %d", len(events))
+		}
+	})
+
+	t.Run("export CSV", func(t *testing.T) {
+		data, err := logger.Export("csv", time.Time{}, time.Time{})
+		if err != nil {
+			t.Fatalf("Export CSV failed: %v", err)
+		}
+
+		// Check header
+		lines := string(data)
+		if !containsSubstring(lines, "timestamp,operation,result,key_hash") {
+			t.Error("expected CSV header in export")
+		}
+
+		// Count data lines (header + 3 events)
+		lineCount := 0
+		for _, c := range lines {
+			if c == '\n' {
+				lineCount++
+			}
+		}
+		if lineCount != 4 { // 1 header + 3 data
+			t.Errorf("expected 4 lines in CSV export, got %d", lineCount)
+		}
+	})
+
+	t.Run("export with since filter", func(t *testing.T) {
+		// Export events from far in the future (should return nothing)
+		futureTime := time.Now().Add(24 * time.Hour)
+		data, err := logger.Export("json", futureTime, time.Time{})
+		if err != nil {
+			t.Fatalf("Export with since filter failed: %v", err)
+		}
+
+		var events []AuditEvent
+		if err := json.Unmarshal(data, &events); err != nil {
+			t.Fatalf("failed to parse JSON export: %v", err)
+		}
+
+		if len(events) != 0 {
+			t.Errorf("expected 0 events with future since filter, got %d", len(events))
+		}
+	})
+
+	t.Run("export with until filter", func(t *testing.T) {
+		// Export events until far in the past (should return nothing)
+		pastTime := time.Now().Add(-24 * time.Hour)
+		data, err := logger.Export("json", time.Time{}, pastTime)
+		if err != nil {
+			t.Fatalf("Export with until filter failed: %v", err)
+		}
+
+		var events []AuditEvent
+		if err := json.Unmarshal(data, &events); err != nil {
+			t.Fatalf("failed to parse JSON export: %v", err)
+		}
+
+		if len(events) != 0 {
+			t.Errorf("expected 0 events with past until filter, got %d", len(events))
+		}
+	})
+
+	t.Run("export invalid format", func(t *testing.T) {
+		_, err := logger.Export("xml", time.Time{}, time.Time{})
+		if err == nil {
+			t.Error("expected error for unsupported format")
+		}
+	})
+}
+
+// containsSubstring checks if a string contains a substring
+func containsSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+// TestCSVEscape tests the CSV escaping function
+func TestCSVEscape(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"simple", "hello", "hello"},
+		{"with comma", "hello,world", `"hello,world"`},
+		{"with quote", `say "hello"`, `"say ""hello"""`},
+		{"with newline", "line1\nline2", "\"line1\nline2\""},
+		{"with carriage return", "line1\rline2", "\"line1\rline2\""},
+		{"empty", "", ""},
+		{"special chars no escape", "hello-world_123", "hello-world_123"},
+		{"injection attempt", `=cmd|'/c calc'!A1`, `"=cmd|'/c calc'!A1"`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := csvEscape(tt.input)
+			if result != tt.expected {
+				t.Errorf("csvEscape(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestPrune tests the audit log prune functionality
+func TestPrune(t *testing.T) {
+	t.Run("prune old events", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		logger := NewLogger(tmpDir)
+
+		masterKey := make([]byte, 32)
+		if err := logger.SetHMACKey(masterKey); err != nil {
+			t.Fatalf("SetHMACKey failed: %v", err)
+		}
+
+		// Log some events
+		_ = logger.LogSuccess(OpSecretSet, SourceCLI, "key1")
+		_ = logger.LogSuccess(OpSecretGet, SourceMCP, "key2")
+		_ = logger.LogSuccess(OpSecretDelete, SourceCLI, "key3")
+
+		// Prune with very short duration (should delete all)
+		// Using 1 nanosecond - events are already older than that
+		time.Sleep(10 * time.Millisecond) // Wait a bit to ensure events are "old"
+		deleted, err := logger.Prune(1 * time.Nanosecond)
+		if err != nil {
+			t.Fatalf("Prune failed: %v", err)
+		}
+
+		if deleted != 3 {
+			t.Errorf("expected 3 deleted events, got %d", deleted)
+		}
+
+		// Verify no events remain
+		var zeroTime time.Time
+		events, _ := logger.ListEvents(100, zeroTime)
+		if len(events) != 0 {
+			t.Errorf("expected 0 events after prune, got %d", len(events))
+		}
+	})
+
+	t.Run("prune with long duration keeps all", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		logger := NewLogger(tmpDir)
+
+		masterKey := make([]byte, 32)
+		if err := logger.SetHMACKey(masterKey); err != nil {
+			t.Fatalf("SetHMACKey failed: %v", err)
+		}
+
+		// Log some events
+		_ = logger.LogSuccess(OpSecretSet, SourceCLI, "key1")
+		_ = logger.LogSuccess(OpSecretGet, SourceMCP, "key2")
+
+		// Prune with very long duration (should keep all)
+		deleted, err := logger.Prune(365 * 24 * time.Hour) // 1 year
+		if err != nil {
+			t.Fatalf("Prune failed: %v", err)
+		}
+
+		if deleted != 0 {
+			t.Errorf("expected 0 deleted events, got %d", deleted)
+		}
+
+		// Verify all events remain
+		var zeroTime time.Time
+		events, _ := logger.ListEvents(100, zeroTime)
+		if len(events) != 2 {
+			t.Errorf("expected 2 events after prune, got %d", len(events))
+		}
+	})
+}
+
+// TestPrunePreview tests the prune preview functionality
+func TestPrunePreview(t *testing.T) {
+	tmpDir := t.TempDir()
+	logger := NewLogger(tmpDir)
+
+	masterKey := make([]byte, 32)
+	if err := logger.SetHMACKey(masterKey); err != nil {
+		t.Fatalf("SetHMACKey failed: %v", err)
+	}
+
+	// Log some events
+	_ = logger.LogSuccess(OpSecretSet, SourceCLI, "key1")
+	_ = logger.LogSuccess(OpSecretGet, SourceMCP, "key2")
+	_ = logger.LogSuccess(OpSecretDelete, SourceCLI, "key3")
+
+	time.Sleep(10 * time.Millisecond) // Wait a bit
+
+	// Preview prune with very short duration
+	count, err := logger.PrunePreview(1 * time.Nanosecond)
+	if err != nil {
+		t.Fatalf("PrunePreview failed: %v", err)
+	}
+
+	if count != 3 {
+		t.Errorf("expected 3 events in preview, got %d", count)
+	}
+
+	// Verify events still exist (preview doesn't delete)
+	var zeroTime time.Time
+	events, _ := logger.ListEvents(100, zeroTime)
+	if len(events) != 3 {
+		t.Errorf("expected 3 events after preview (no deletion), got %d", len(events))
+	}
+}
