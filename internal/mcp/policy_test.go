@@ -75,6 +75,43 @@ func TestPolicyIsCommandAllowed(t *testing.T) {
 			command: "/usr/bin/aws",
 			allowed: true,
 		},
+		{
+			name: "default denied env always blocked",
+			policy: Policy{
+				Version:         1,
+				DefaultAction:   "allow",
+				AllowedCommands: []string{"env"}, // even if explicitly allowed
+			},
+			command: "env",
+			allowed: false, // always denied per §4.2
+		},
+		{
+			name: "default denied printenv always blocked",
+			policy: Policy{
+				Version:       1,
+				DefaultAction: "allow",
+			},
+			command: "printenv",
+			allowed: false, // always denied per §4.2
+		},
+		{
+			name: "default denied set always blocked",
+			policy: Policy{
+				Version:       1,
+				DefaultAction: "allow",
+			},
+			command: "set",
+			allowed: false, // always denied per §4.2
+		},
+		{
+			name: "default denied export always blocked",
+			policy: Policy{
+				Version:       1,
+				DefaultAction: "allow",
+			},
+			command: "/bin/export",
+			allowed: false, // always denied per §4.2
+		},
 	}
 
 	for _, tt := range tests {

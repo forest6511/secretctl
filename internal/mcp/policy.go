@@ -98,11 +98,19 @@ func LoadPolicy(vaultPath string) (*Policy, error) {
 
 // IsCommandAllowed checks if a command is allowed by the policy.
 // Evaluation order per mcp-design-ja.md §4.3:
+// 0. default_denied_commands → always deny (hardcoded security)
 // 1. denied_commands → deny
 // 2. allowed_commands → allow
 // 3. default_action
 func (p *Policy) IsCommandAllowed(command string) (bool, string) {
-	// 1. Check denied commands first (highest priority)
+	// 0. Check default denied commands first (always blocked per §4.2)
+	for _, denied := range DefaultDeniedCommands() {
+		if matchCommand(command, denied) {
+			return false, fmt.Sprintf("command '%s' is always denied for security", command)
+		}
+	}
+
+	// 1. Check user-defined denied commands (highest priority)
 	for _, denied := range p.DeniedCommands {
 		if matchCommand(command, denied) {
 			return false, fmt.Sprintf("command '%s' matches denied pattern '%s'", command, denied)
