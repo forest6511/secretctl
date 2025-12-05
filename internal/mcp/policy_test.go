@@ -8,10 +8,10 @@ import (
 
 func TestPolicyIsCommandAllowed(t *testing.T) {
 	tests := []struct {
-		name     string
-		policy   Policy
-		command  string
-		allowed  bool
+		name    string
+		policy  Policy
+		command string
+		allowed bool
 	}{
 		{
 			name: "denied command",

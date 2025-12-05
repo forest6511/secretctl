@@ -116,11 +116,11 @@ func TestValidateEnvName(t *testing.T) {
 		{"API_KEY", false},
 		{"_PRIVATE", false},
 		{"ABC123", false},
-		{"", true},           // empty
-		{"123ABC", true},     // starts with number
-		{"API-KEY", true},    // contains hyphen
-		{"API KEY", true},    // contains space
-		{"API.KEY", true},    // contains dot
+		{"", true},        // empty
+		{"123ABC", true},  // starts with number
+		{"API-KEY", true}, // contains hyphen
+		{"API KEY", true}, // contains space
+		{"API.KEY", true}, // contains dot
 	}
 
 	for _, tt := range tests {
@@ -140,9 +140,9 @@ func TestValidateCommand(t *testing.T) {
 	}{
 		{"aws", false},
 		{"/usr/bin/aws", false},
-		{"../evil", true},         // path traversal
-		{"./evil/../bad", true},   // path traversal
-		{"cmd\x00arg", true},      // NUL byte
+		{"../evil", true},       // path traversal
+		{"./evil/../bad", true}, // path traversal
+		{"cmd\x00arg", true},    // NUL byte
 	}
 
 	for _, tt := range tests {
@@ -229,10 +229,10 @@ func TestParseDuration(t *testing.T) {
 		wantErr  bool
 	}{
 		{"30s", 30, false},
-		{"5h", 18000, false},       // 5 hours (use 'h' not 'm' which is month)
+		{"5h", 18000, false}, // 5 hours (use 'h' not 'm' which is month)
 		{"1h", 3600, false},
 		{"7d", 604800, false},
-		{"1m", 2592000, false},     // 1 month = 30 days
+		{"1m", 2592000, false}, // 1 month = 30 days
 		{"invalid", 0, true},
 		{"", 0, true},
 	}

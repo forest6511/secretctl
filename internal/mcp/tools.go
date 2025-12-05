@@ -12,8 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/forest6511/secretctl/pkg/vault"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/forest6511/secretctl/pkg/vault"
 )
 
 // Tool input types per mcp-design-ja.md §3
@@ -88,17 +89,18 @@ type SecretRunOutput struct {
 }
 
 // handleSecretList handles the secret_list tool call.
-func (s *Server) handleSecretList(ctx context.Context, req *mcp.CallToolRequest, input SecretListInput) (*mcp.CallToolResult, SecretListOutput, error) {
+func (s *Server) handleSecretList(_ context.Context, _ *mcp.CallToolRequest, input SecretListInput) (*mcp.CallToolResult, SecretListOutput, error) {
 	var entries []*vault.SecretEntry
 	var err error
 
-	if input.Tag != "" {
+	switch {
+	case input.Tag != "":
 		// Filter by tag
 		entries, err = s.vault.ListSecretsByTag(input.Tag)
 		if err != nil {
 			return nil, SecretListOutput{}, fmt.Errorf("failed to list secrets by tag: %w", err)
 		}
-	} else if input.ExpiringWithin != "" {
+	case input.ExpiringWithin != "":
 		// Filter by expiration
 		duration, parseErr := parseDuration(input.ExpiringWithin)
 		if parseErr != nil {
@@ -108,7 +110,7 @@ func (s *Server) handleSecretList(ctx context.Context, req *mcp.CallToolRequest,
 		if err != nil {
 			return nil, SecretListOutput{}, fmt.Errorf("failed to list expiring secrets: %w", err)
 		}
-	} else {
+	default:
 		// List all secrets - need to get full entries for metadata
 		keys, listErr := s.vault.ListSecrets()
 		if listErr != nil {
@@ -149,7 +151,7 @@ func (s *Server) handleSecretList(ctx context.Context, req *mcp.CallToolRequest,
 }
 
 // handleSecretExists handles the secret_exists tool call.
-func (s *Server) handleSecretExists(ctx context.Context, req *mcp.CallToolRequest, input SecretExistsInput) (*mcp.CallToolResult, SecretExistsOutput, error) {
+func (s *Server) handleSecretExists(_ context.Context, _ *mcp.CallToolRequest, input SecretExistsInput) (*mcp.CallToolResult, SecretExistsOutput, error) {
 	if input.Key == "" {
 		return nil, SecretExistsOutput{}, errors.New("key is required")
 	}
@@ -182,7 +184,7 @@ func (s *Server) handleSecretExists(ctx context.Context, req *mcp.CallToolReques
 }
 
 // handleSecretGetMasked handles the secret_get_masked tool call.
-func (s *Server) handleSecretGetMasked(ctx context.Context, req *mcp.CallToolRequest, input SecretGetMaskedInput) (*mcp.CallToolResult, SecretGetMaskedOutput, error) {
+func (s *Server) handleSecretGetMasked(_ context.Context, _ *mcp.CallToolRequest, input SecretGetMaskedInput) (*mcp.CallToolResult, SecretGetMaskedOutput, error) {
 	if input.Key == "" {
 		return nil, SecretGetMaskedOutput{}, errors.New("key is required")
 	}
@@ -227,7 +229,7 @@ func maskValue(value []byte) string {
 }
 
 // handleSecretRun handles the secret_run tool call.
-func (s *Server) handleSecretRun(ctx context.Context, req *mcp.CallToolRequest, input SecretRunInput) (*mcp.CallToolResult, SecretRunOutput, error) {
+func (s *Server) handleSecretRun(ctx context.Context, _ *mcp.CallToolRequest, input *SecretRunInput) (*mcp.CallToolResult, SecretRunOutput, error) {
 	// Acquire semaphore for concurrency limiting per §6.4 (max 5 concurrent secret_run)
 	select {
 	case s.runSem <- struct{}{}:
@@ -417,16 +419,16 @@ var blockedEnvVars = map[string]bool{
 	"SECRETCTL_PASSWORD": true,
 
 	// Dynamic linker attacks
-	"LD_PRELOAD":           true,
-	"LD_LIBRARY_PATH":      true,
+	"LD_PRELOAD":            true,
+	"LD_LIBRARY_PATH":       true,
 	"DYLD_INSERT_LIBRARIES": true,
-	"DYLD_LIBRARY_PATH":    true,
+	"DYLD_LIBRARY_PATH":     true,
 
 	// Shell startup script execution
-	"BASH_ENV":   true,
-	"ENV":        true,
-	"SHELLOPTS":  true,
-	"BASHOPTS":   true,
+	"BASH_ENV":  true,
+	"ENV":       true,
+	"SHELLOPTS": true,
+	"BASHOPTS":  true,
 
 	// Script language auto-execution
 	"PERL5OPT":      true,
@@ -573,11 +575,12 @@ func (s *Server) executeCommand(ctx context.Context, command string, args []stri
 
 	if err != nil {
 		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		switch {
+		case errors.As(err, &exitErr):
 			result.ExitCode = exitErr.ExitCode()
-		} else if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		case errors.Is(ctx.Err(), context.DeadlineExceeded):
 			return nil, fmt.Errorf("command timed out after %v", timeout)
-		} else {
+		default:
 			return nil, fmt.Errorf("command execution failed: %w", err)
 		}
 	}

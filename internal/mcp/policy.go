@@ -22,6 +22,12 @@ type Policy struct {
 // PolicyFileName is the name of the policy file
 const PolicyFileName = "mcp-policy.yaml"
 
+// Policy action constants
+const (
+	ActionAllow = "allow"
+	ActionDeny  = "deny"
+)
+
 // ErrPolicyNotFound is returned when no policy file exists
 var ErrPolicyNotFound = errors.New("MCP policy file not found")
 
@@ -90,7 +96,7 @@ func LoadPolicy(vaultPath string) (*Policy, error) {
 
 	// Default to deny if not specified
 	if policy.DefaultAction == "" {
-		policy.DefaultAction = "deny"
+		policy.DefaultAction = ActionDeny
 	}
 
 	return &policy, nil
@@ -102,7 +108,7 @@ func LoadPolicy(vaultPath string) (*Policy, error) {
 // 1. denied_commands → deny
 // 2. allowed_commands → allow
 // 3. default_action
-func (p *Policy) IsCommandAllowed(command string) (bool, string) {
+func (p *Policy) IsCommandAllowed(command string) (allowed bool, reason string) {
 	// 0. Check default denied commands first (always blocked per §4.2)
 	for _, denied := range DefaultDeniedCommands() {
 		if matchCommand(command, denied) {
@@ -125,7 +131,7 @@ func (p *Policy) IsCommandAllowed(command string) (bool, string) {
 	}
 
 	// 3. Use default action
-	if p.DefaultAction == "allow" {
+	if p.DefaultAction == ActionAllow {
 		return true, ""
 	}
 
@@ -150,8 +156,8 @@ func (p *Policy) ValidatePolicy() error {
 		return fmt.Errorf("unsupported policy version: %d", p.Version)
 	}
 
-	if p.DefaultAction != "deny" && p.DefaultAction != "allow" {
-		return fmt.Errorf("invalid default_action: %s (must be 'deny' or 'allow')", p.DefaultAction)
+	if p.DefaultAction != ActionDeny && p.DefaultAction != ActionAllow {
+		return fmt.Errorf("invalid default_action: %s (must be '%s' or '%s')", p.DefaultAction, ActionDeny, ActionAllow)
 	}
 
 	return nil

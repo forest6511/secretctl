@@ -9,8 +9,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/forest6511/secretctl/pkg/vault"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/forest6511/secretctl/pkg/vault"
 )
 
 // maxConcurrentRuns is the maximum number of concurrent secret_run executions per §6.4
