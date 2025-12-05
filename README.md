@@ -173,6 +173,48 @@ secretctl audit export --format=csv -o audit.csv
 secretctl audit prune --older-than=12m --dry-run
 ```
 
+### AI Integration (MCP Server)
+
+secretctl includes an MCP server for secure integration with AI coding assistants like Claude Code:
+
+```bash
+# Start MCP server (requires SECRETCTL_PASSWORD)
+SECRETCTL_PASSWORD=your-password secretctl mcp-server
+```
+
+**Available MCP Tools:**
+- `secret_list` — List secret keys with metadata (no values exposed)
+- `secret_exists` — Check if a secret exists with metadata
+- `secret_get_masked` — Get masked value (e.g., `****WXYZ`)
+- `secret_run` — Execute commands with secrets as environment variables
+
+**Configure in Claude Code** (`~/.claude.json`):
+```json
+{
+  "mcpServers": {
+    "secretctl": {
+      "command": "/path/to/secretctl",
+      "args": ["mcp-server"],
+      "env": {
+        "SECRETCTL_PASSWORD": "your-master-password"
+      }
+    }
+  }
+}
+```
+
+**Policy Configuration** (`~/.secretctl/mcp-policy.yaml`):
+```yaml
+version: 1
+default_action: deny
+allowed_commands:
+  - aws
+  - gcloud
+  - kubectl
+```
+
+> **Security**: AI agents never receive plaintext secrets. The `secret_run` tool injects secrets as environment variables, and output is automatically sanitized.
+
 ## Security
 
 secretctl takes security seriously:

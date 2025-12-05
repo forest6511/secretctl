@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2025-12-05
+
+### Added
+- **`mcp-server` command** - MCP server for AI coding assistant integration
+  - `secret_list`: List secret keys with metadata (no values)
+  - `secret_exists`: Check if a secret exists with metadata
+  - `secret_get_masked`: Get masked secret value (e.g., `****WXYZ`)
+  - `secret_run`: Execute command with secrets as environment variables
+  - Policy-based command allowlisting via `~/.secretctl/mcp-policy.yaml`
+
+### Security
+- **Option D+ design**: AI agents never receive plaintext secrets
+- Default denied commands (env, printenv, set, export) always blocked
+- Output sanitization in secret_run prevents secret leakage
+- TOCTOU-safe policy file loading with symlink rejection
+- Concurrent execution limiting (max 5 secret_run operations)
+
 ## [0.2.0] - 2025-12-03
 
 ### Added
