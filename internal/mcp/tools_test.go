@@ -164,6 +164,7 @@ func TestValidateArgs(t *testing.T) {
 		{"normal args", []string{"s3", "ls"}, false},
 		{"empty args", []string{}, false},
 		{"NUL byte in arg", []string{"arg\x00"}, true},
+		{"arg too long", []string{string(make([]byte, 32769))}, true},
 	}
 
 	for _, tt := range tests {
@@ -232,9 +233,13 @@ func TestParseDuration(t *testing.T) {
 		{"5h", 18000, false}, // 5 hours (use 'h' not 'm' which is month)
 		{"1h", 3600, false},
 		{"7d", 604800, false},
-		{"1m", 2592000, false}, // 1 month = 30 days
+		{"1m", 2592000, false},  // 1 month = 30 days
+		{"2w", 1209600, false},  // 2 weeks
+		{"1y", 31536000, false}, // 1 year = 365 days
 		{"invalid", 0, true},
 		{"", 0, true},
+		{"x", 0, true}, // too short
+		{"abc", 0, true},
 	}
 
 	for _, tt := range tests {
@@ -249,4 +254,156 @@ func TestParseDuration(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestExpandPattern(t *testing.T) {
+	availableKeys := []string{"aws/access_key", "aws/secret_key", "db/password", "api_key"}
+
+	tests := []struct {
+		name      string
+		pattern   string
+		expected  []string
+		wantErr   bool
+		errString string
+	}{
+		{
+			name:     "exact match",
+			pattern:  "api_key",
+			expected: []string{"api_key"},
+			wantErr:  false,
+		},
+		{
+			name:     "wildcard match",
+			pattern:  "aws/*",
+			expected: []string{"aws/access_key", "aws/secret_key"},
+			wantErr:  false,
+		},
+		{
+			name:     "single char wildcard",
+			pattern:  "db/?assword",
+			expected: []string{"db/password"},
+			wantErr:  false,
+		},
+		{
+			name:      "no match exact",
+			pattern:   "nonexistent",
+			expected:  nil,
+			wantErr:   true,
+			errString: "not found",
+		},
+		{
+			name:      "no match glob",
+			pattern:   "other/*",
+			expected:  nil,
+			wantErr:   true,
+			errString: "no secrets match",
+		},
+		{
+			name:      "invalid pattern",
+			pattern:   "[invalid",
+			expected:  nil,
+			wantErr:   true,
+			errString: "invalid pattern",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := expandPattern(tt.pattern, availableKeys)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expandPattern(%q) expected error, got nil", tt.pattern)
+				} else if tt.errString != "" && !contains(err.Error(), tt.errString) {
+					t.Errorf("expandPattern(%q) error = %v, want error containing %q", tt.pattern, err, tt.errString)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("expandPattern(%q) unexpected error: %v", tt.pattern, err)
+				return
+			}
+			if !slicesEqual(result, tt.expected) {
+				t.Errorf("expandPattern(%q) = %v, want %v", tt.pattern, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestWipeSecrets(t *testing.T) {
+	secrets := []secretData{
+		{key: "key1", value: []byte("secret1")},
+		{key: "key2", value: []byte("password123")},
+	}
+
+	// Verify values exist before wipe
+	if string(secrets[0].value) != "secret1" {
+		t.Fatal("setup failed")
+	}
+
+	wipeSecrets(secrets)
+
+	// Verify all bytes are zeroed
+	for i, s := range secrets {
+		for j, b := range s.value {
+			if b != 0 {
+				t.Errorf("secrets[%d].value[%d] = %d, want 0", i, j, b)
+			}
+		}
+	}
+}
+
+func TestOutputSanitizerMultipleOccurrences(t *testing.T) {
+	secrets := []secretData{
+		{key: "API_KEY", value: []byte("secret123")},
+	}
+	sanitizer := newOutputSanitizer(secrets)
+
+	// Multiple occurrences should all be redacted
+	input := []byte("first: secret123, second: secret123")
+	result := sanitizer.sanitize(input)
+	expected := "first: [REDACTED:API_KEY], second: [REDACTED:API_KEY]"
+
+	if string(result) != expected {
+		t.Errorf("sanitize = %q, want %q", result, expected)
+	}
+}
+
+func TestOutputSanitizerEmpty(t *testing.T) {
+	var secrets []secretData
+	sanitizer := newOutputSanitizer(secrets)
+
+	// Empty secrets should return unchanged data
+	input := []byte("some data")
+	result := sanitizer.sanitize(input)
+
+	if string(result) != string(input) {
+		t.Errorf("sanitize with no secrets = %q, want %q", result, input)
+	}
+}
+
+// Helper functions
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || substr == "" ||
+		(s != "" && substr != "" && findSubstring(s, substr)))
+}
+
+func findSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+func slicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
