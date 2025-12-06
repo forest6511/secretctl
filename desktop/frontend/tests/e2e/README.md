@@ -15,27 +15,16 @@ npx playwright install chromium
 
 ## Running Tests
 
-### Step 1: Start Fresh Wails Dev Server
-
-In a separate terminal, run:
-
-```bash
-# Clean vault directory and start fresh dev server
-rm -rf /tmp/secretctl-e2e-test && mkdir -p /tmp/secretctl-e2e-test
-cd /path/to/secretctl/desktop
-SECRETCTL_VAULT_DIR=/tmp/secretctl-e2e-test wails dev
-```
-
-Wait until you see `Vite dev server running at http://localhost:34115`
-
-### Step 2: Run Tests
-
-In another terminal:
+Tests are fully automated. Playwright will:
+1. Clean the vault directory (`/tmp/secretctl-e2e-test`)
+2. Start the Wails dev server automatically
+3. Run all tests
+4. Shut down the server when done
 
 ```bash
 cd desktop/frontend
 
-# Run all E2E tests
+# Run all E2E tests (auto-starts server)
 npm run test:e2e
 
 # Run tests with visible browser
@@ -46,6 +35,19 @@ npm run test:e2e:ui
 
 # Run specific test file
 npx playwright test tests/e2e/auth.spec.ts
+```
+
+### Manual Server Mode
+
+If you prefer to run the server manually (faster for development):
+
+```bash
+# Terminal 1: Start server
+rm -rf /tmp/secretctl-e2e-test && mkdir -p /tmp/secretctl-e2e-test
+cd desktop && SECRETCTL_VAULT_DIR=/tmp/secretctl-e2e-test wails dev
+
+# Terminal 2: Run tests (will reuse existing server)
+cd desktop/frontend && npm run test:e2e
 ```
 
 ## Test Structure

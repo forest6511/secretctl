@@ -15,6 +15,9 @@ export default defineConfig({
     ['list'],
   ],
 
+  // Clean vault directory before tests
+  globalSetup: './tests/e2e/global-setup.ts',
+
   use: {
     // Base URL for Wails dev server
     baseURL: 'http://localhost:34115',
@@ -38,6 +41,13 @@ export default defineConfig({
     },
   ],
 
-  // Don't start web server - Wails dev server must be running
-  // Run: cd desktop && wails dev
+  // Auto-start Wails dev server with fresh vault
+  webServer: {
+    command: 'cd .. && SECRETCTL_VAULT_DIR=/tmp/secretctl-e2e-test wails dev',
+    url: 'http://localhost:34115',
+    reuseExistingServer: !process.env.CI,
+    timeout: 60000, // Wails dev takes time to start
+    stdout: 'pipe',
+    stderr: 'pipe',
+  },
 })
