@@ -43,3 +43,6 @@ docs/internal/
 
 # MCP config (may contain tokens)
 .mcp.json
+
+# Playwright MCP artifacts
+.playwright-mcp/

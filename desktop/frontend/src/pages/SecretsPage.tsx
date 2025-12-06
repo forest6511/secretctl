@@ -200,12 +200,13 @@ export function SecretsPage({ onLocked }: SecretsPageProps) {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
+              data-testid="search-secrets"
             />
           </div>
         </div>
 
         {/* Secret List */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto" data-testid="secrets-list">
           {filteredSecrets.map((secret) => (
             <button
               key={secret.key}
@@ -213,6 +214,7 @@ export function SecretsPage({ onLocked }: SecretsPageProps) {
               className={`w-full p-3 text-left border-b border-border hover:bg-muted/50 transition-colors ${
                 selectedKey === secret.key ? 'bg-muted' : ''
               }`}
+              data-testid={`secret-item-${secret.key.replace(/\//g, '-')}`}
             >
               <div className="flex items-center gap-2">
                 <Key className="w-4 h-4 text-muted-foreground flex-shrink-0" />
@@ -238,7 +240,7 @@ export function SecretsPage({ onLocked }: SecretsPageProps) {
 
         {/* Add Button */}
         <div className="p-4 border-t border-border">
-          <Button className="w-full" onClick={handleStartCreate}>
+          <Button className="w-full" onClick={handleStartCreate} data-testid="add-secret-button">
             <Plus className="w-4 h-4 mr-2" />
             Add Secret
           </Button>
@@ -260,6 +262,7 @@ export function SecretsPage({ onLocked }: SecretsPageProps) {
                   onChange={(e) => setFormKey(e.target.value)}
                   placeholder="e.g., aws/production/api-key"
                   disabled={isEditing}
+                  data-testid="secret-key-input"
                 />
               </div>
               <div className="space-y-2">
@@ -271,6 +274,7 @@ export function SecretsPage({ onLocked }: SecretsPageProps) {
                     onChange={(e) => setFormValue(e.target.value)}
                     placeholder="Secret value"
                     className="pr-10"
+                    data-testid="secret-value-input"
                   />
                   <button
                     type="button"
@@ -287,6 +291,7 @@ export function SecretsPage({ onLocked }: SecretsPageProps) {
                   value={formUrl}
                   onChange={(e) => setFormUrl(e.target.value)}
                   placeholder="https://example.com"
+                  data-testid="secret-url-input"
                 />
               </div>
               <div className="space-y-2">
@@ -295,6 +300,7 @@ export function SecretsPage({ onLocked }: SecretsPageProps) {
                   value={formTags}
                   onChange={(e) => setFormTags(e.target.value)}
                   placeholder="production, aws, api"
+                  data-testid="secret-tags-input"
                 />
               </div>
               <div className="space-y-2">
@@ -304,13 +310,14 @@ export function SecretsPage({ onLocked }: SecretsPageProps) {
                   onChange={(e) => setFormNotes(e.target.value)}
                   placeholder="Additional notes..."
                   className="w-full min-h-[100px] rounded-md border border-border bg-transparent px-3 py-2 text-sm"
+                  data-testid="secret-notes-input"
                 />
               </div>
               <div className="flex gap-2 pt-4">
-                <Button onClick={handleSave}>
+                <Button onClick={handleSave} data-testid="save-secret-button">
                   {isCreating ? 'Create' : 'Save'}
                 </Button>
-                <Button variant="outline" onClick={handleCancel}>
+                <Button variant="outline" onClick={handleCancel} data-testid="cancel-button">
                   Cancel
                 </Button>
               </div>
@@ -325,10 +332,10 @@ export function SecretsPage({ onLocked }: SecretsPageProps) {
                   {selectedSecret.key}
                 </CardTitle>
                 <div className="flex gap-1">
-                  <Button variant="ghost" size="icon" onClick={handleStartEdit} title="Edit">
+                  <Button variant="ghost" size="icon" onClick={handleStartEdit} title="Edit" data-testid="edit-secret-button">
                     <FileText className="w-4 h-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={handleDelete} title="Delete">
+                  <Button variant="ghost" size="icon" onClick={handleDelete} title="Delete" data-testid="delete-secret-button">
                     <Trash2 className="w-4 h-4 text-destructive" />
                   </Button>
                 </div>
@@ -344,12 +351,14 @@ export function SecretsPage({ onLocked }: SecretsPageProps) {
                     value={selectedSecret.value || ''}
                     readOnly
                     className="font-mono"
+                    data-testid="secret-value-display"
                   />
                   <Button
                     variant="ghost"
                     size="icon"
                     onClick={() => setShowValue(!showValue)}
                     title={showValue ? 'Hide' : 'Show'}
+                    data-testid="toggle-value-visibility"
                   >
                     {showValue ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </Button>
@@ -358,6 +367,7 @@ export function SecretsPage({ onLocked }: SecretsPageProps) {
                     size="icon"
                     onClick={handleCopy}
                     title="Copy"
+                    data-testid="copy-secret-button"
                   >
                     <Copy className={`w-4 h-4 ${copyFeedback ? 'text-green-500' : ''}`} />
                   </Button>

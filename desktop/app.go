@@ -94,6 +94,10 @@ func (a *App) CheckVaultExists() bool {
 
 // InitVault creates a new vault with master password
 func (a *App) InitVault(password string) error {
+	if len(password) < 8 {
+		return errors.New("password must be at least 8 characters")
+	}
+
 	if a.CheckVaultExists() {
 		return errors.New("vault already exists")
 	}

@@ -102,6 +102,7 @@ export function AuthPage({ onAuthenticated }: AuthPageProps) {
                   onChange={(e) => setPassword(e.target.value)}
                   className="pr-10"
                   autoFocus
+                  data-testid="master-password"
                 />
                 <button
                   type="button"
@@ -120,6 +121,7 @@ export function AuthPage({ onAuthenticated }: AuthPageProps) {
                   placeholder="Confirm password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
+                  data-testid="confirm-password"
                 />
               </div>
             )}
@@ -131,7 +133,7 @@ export function AuthPage({ onAuthenticated }: AuthPageProps) {
               </div>
             )}
 
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full" disabled={loading} data-testid="unlock-button">
               {loading ? (
                 <span className="animate-pulse">Processing...</span>
               ) : (

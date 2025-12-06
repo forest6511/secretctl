@@ -6,7 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts,.tsx",
+    "test": "echo 'No tests configured yet - see docs/internal/testing/strategy.md'",
+    "test:unit": "echo 'Vitest not yet configured - run: npm install -D vitest @testing-library/react'",
+    "test:e2e": "echo 'Playwright not yet configured - run: npm install -D @playwright/test'"
   },
   "dependencies": {
     "react": "^18.2.0",
