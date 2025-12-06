@@ -6,6 +6,11 @@
 *.so
 *.dylib
 
+# Desktop app (Wails)
+desktop/build/bin/
+desktop/frontend/node_modules/
+desktop/frontend/dist/
+
 # Test artifacts
 *.test
 *.out
@@ -38,3 +43,6 @@ docs/internal/
 
 # MCP config (may contain tokens)
 .mcp.json
+
+# Playwright MCP artifacts
+.playwright-mcp/
