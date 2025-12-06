@@ -9,15 +9,18 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts,.tsx",
-    "test": "echo 'No tests configured yet - see docs/internal/testing/strategy.md'",
+    "test": "npx playwright test",
     "test:unit": "echo 'Vitest not yet configured - run: npm install -D vitest @testing-library/react'",
-    "test:e2e": "echo 'Playwright not yet configured - run: npm install -D @playwright/test'"
+    "test:e2e": "npx playwright test",
+    "test:e2e:ui": "npx playwright test --ui",
+    "test:e2e:headed": "npx playwright test --headed"
   },
   "dependencies": {
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.57.0",
     "@tailwindcss/vite": "^4.1.17",
     "@types/node": "^24.10.1",
     "@types/react": "^18.0.17",

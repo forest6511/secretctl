@@ -46,3 +46,7 @@ docs/internal/
 
 # Playwright MCP artifacts
 .playwright-mcp/
+
+# Playwright test artifacts
+desktop/frontend/playwright-report/
+desktop/frontend/test-results/
