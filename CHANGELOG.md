@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2025-12-06
+
+### Added
+- **Desktop App** - Native desktop application built with Wails v2
+  - Cross-platform support (macOS, Windows, Linux)
+  - Vault creation with master password validation
+  - Vault unlock with password authentication
+  - Secrets list view with metadata display
+  - Password visibility toggle
+  - Modern React + TypeScript + Tailwind CSS frontend
+  - Playwright E2E test framework
+
+### Changed
+- Reorganized project structure with `desktop/` directory for Wails app
+
 ## [0.3.0] - 2025-12-05
 
 ### Added
