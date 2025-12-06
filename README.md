@@ -16,7 +16,7 @@ Managing secrets shouldn't require a PhD in DevOps. secretctl is a local-first s
 - **Just works** — Single binary, no servers, no configuration files
 - **Stays local** — Your secrets never leave your machine
 - **Plays nice with AI** — Designed for the age of AI coding assistants (MCP-ready)
-- **Respects your workflow** — CLI-first with optional Web UI
+- **Respects your workflow** — CLI-first with Desktop App
 
 ```
 # That's it. You're done.
@@ -214,6 +214,32 @@ allowed_commands:
 ```
 
 > **Security**: AI agents never receive plaintext secrets. The `secret_run` tool injects secrets as environment variables, and output is automatically sanitized.
+
+### Desktop App
+
+secretctl includes a native desktop application built with Wails v2:
+
+```bash
+# Build the desktop app
+cd desktop && wails build
+
+# Or run in development mode
+cd desktop && wails dev
+```
+
+**Features:**
+- Native macOS/Windows/Linux application
+- Create and unlock vaults with master password
+- View secrets list with metadata
+- Password visibility toggle
+- Modern React + TypeScript frontend
+
+**Development:**
+```bash
+# Run E2E tests (Playwright)
+cd desktop/frontend
+npm run test:e2e
+```
 
 ## Security
 
