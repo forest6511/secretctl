@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2025-12-08
+
+### Added
+- **Desktop App Secret CRUD** - Full secret management in desktop application
+  - Create secrets with key, value, URL, tags, and notes
+  - Read and view secret details with metadata
+  - Update existing secrets
+  - Delete secrets with confirmation dialog
+  - Search and filter secrets by key
+  - Copy secret values to clipboard with auto-clear feedback
+- **E2E Test Coverage** - All E2E tests enabled and passing
+  - 6 authentication tests (SEC-001, SEC-002)
+  - 6 secret CRUD tests (CORE-001 to CORE-006)
+
+### Fixed
+- Playwright strict mode violations in E2E tests
+- Dialog handling in delete confirmation tests
+
 ## [0.4.0] - 2025-12-06
 
 ### Added
@@ -16,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Vault unlock with password authentication
   - Secrets list view with metadata display
   - Password visibility toggle
+  - Auto-lock on idle timeout (15 minutes)
   - Modern React + TypeScript + Tailwind CSS frontend
   - Playwright E2E test framework
 
