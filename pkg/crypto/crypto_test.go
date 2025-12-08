@@ -411,6 +411,8 @@ func TestSecureWipe(t *testing.T) {
 
 // TestSecureWipeEmptySlice tests SecureWipe with empty slice
 func TestSecureWipeEmptySlice(t *testing.T) {
+	t.Log("Testing SecureWipe with empty and nil slices")
+
 	// Should not panic on empty slice
 	data := []byte{}
 	SecureWipe(data)
