@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import {
   Search, Plus, Copy, Trash2, Eye, EyeOff, Key,
-  Lock, RefreshCw, FileText, ExternalLink, Tag
+  Lock, RefreshCw, FileText, ExternalLink, Tag, ClipboardList
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,9 +15,10 @@ import { EventsOn } from '../../wailsjs/runtime/runtime'
 
 interface SecretsPageProps {
   onLocked: () => void
+  onNavigateToAudit: () => void
 }
 
-export function SecretsPage({ onLocked }: SecretsPageProps) {
+export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
   const [secrets, setSecrets] = useState<main.SecretListItem[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
@@ -185,6 +186,9 @@ export function SecretsPage({ onLocked }: SecretsPageProps) {
           <div className="flex items-center justify-between mb-3">
             <h1 className="text-lg font-semibold">Secrets</h1>
             <div className="flex gap-1">
+              <Button variant="ghost" size="icon" onClick={onNavigateToAudit} title="Audit Log" data-testid="audit-button">
+                <ClipboardList className="w-4 h-4" />
+              </Button>
               <Button variant="ghost" size="icon" onClick={loadSecrets} title="Refresh">
                 <RefreshCw className="w-4 h-4" />
               </Button>

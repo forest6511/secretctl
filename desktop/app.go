@@ -331,6 +331,12 @@ type AuditLogFilter struct {
 	Success   *bool  `json:"success,omitempty"`
 }
 
+// AuditLogSearchResult contains paginated audit log results
+type AuditLogSearchResult struct {
+	Entries []AuditLogEntry `json:"entries"`
+	Total   int             `json:"total"`
+}
+
 // ListAuditLogs returns audit logs
 func (a *App) ListAuditLogs(limit int) ([]AuditLogEntry, error) {
 	if !a.unlocked {
@@ -364,15 +370,15 @@ func (a *App) ListAuditLogs(limit int) ([]AuditLogEntry, error) {
 }
 
 // SearchAuditLogs returns filtered and paginated audit logs
-func (a *App) SearchAuditLogs(filter AuditLogFilter, limit, offset int) ([]AuditLogEntry, int, error) {
+func (a *App) SearchAuditLogs(filter AuditLogFilter, limit, offset int) (*AuditLogSearchResult, error) {
 	if !a.unlocked {
-		return nil, 0, errors.New("vault locked")
+		return nil, errors.New("vault locked")
 	}
 
 	auditLogger := a.vault.AuditLogger()
 	allEvents, err := auditLogger.ListEvents(0, time.Time{})
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	var filtered []audit.AuditEvent
@@ -441,7 +447,10 @@ func (a *App) SearchAuditLogs(filter AuditLogFilter, limit, offset int) ([]Audit
 		})
 	}
 
-	return entries, total, nil
+	return &AuditLogSearchResult{
+		Entries: entries,
+		Total:   total,
+	}, nil
 }
 
 // VerifyAuditLogs verifies audit log integrity

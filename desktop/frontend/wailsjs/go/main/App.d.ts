@@ -26,7 +26,7 @@ export function Lock():Promise<void>;
 
 export function ResetIdleTimer():Promise<void>;
 
-export function SearchAuditLogs(arg1:main.AuditLogFilter,arg2:number,arg3:number):Promise<Array<main.AuditLogEntry>>;
+export function SearchAuditLogs(arg1:main.AuditLogFilter,arg2:number,arg3:number):Promise<main.AuditLogSearchResult>;
 
 export function Unlock(arg1:string):Promise<void>;
 
