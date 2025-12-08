@@ -230,15 +230,25 @@ cd desktop && wails dev
 **Features:**
 - Native macOS/Windows/Linux application
 - Create and unlock vaults with master password
-- View secrets list with metadata
+- Full secret CRUD operations (Create, Read, Update, Delete)
+- Search and filter secrets by key
+- Copy secret values to clipboard (with auto-clear)
+- Metadata support (URL, tags, notes)
 - Password visibility toggle
-- Modern React + TypeScript frontend
+- Auto-lock on idle timeout
+- Modern React + TypeScript + Tailwind CSS frontend
 
 **Development:**
 ```bash
 # Run E2E tests (Playwright)
 cd desktop/frontend
 npm run test:e2e
+
+# Run with visible browser
+npm run test:e2e:headed
+
+# Run with Playwright UI
+npm run test:e2e:ui
 ```
 
 ## Security
