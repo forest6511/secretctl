@@ -1,10 +1,14 @@
 import { useState, useEffect } from 'react'
 import { AuthPage } from '@/pages/AuthPage'
 import { SecretsPage } from '@/pages/SecretsPage'
+import { AuditPage } from '@/pages/AuditPage'
 import { GetAuthStatus } from '../wailsjs/go/main/App'
+
+type Page = 'secrets' | 'audit'
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
+  const [currentPage, setCurrentPage] = useState<Page>('secrets')
 
   useEffect(() => {
     checkAuth()
@@ -31,7 +35,16 @@ function App() {
     return <AuthPage onAuthenticated={() => setIsAuthenticated(true)} />
   }
 
-  return <SecretsPage onLocked={() => setIsAuthenticated(false)} />
+  if (currentPage === 'audit') {
+    return <AuditPage onNavigateBack={() => setCurrentPage('secrets')} />
+  }
+
+  return (
+    <SecretsPage
+      onLocked={() => setIsAuthenticated(false)}
+      onNavigateToAudit={() => setCurrentPage('audit')}
+    />
+  )
 }
 
 export default App
