@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2025-12-08
+
+### Added
+- **Audit Log Viewer** - Comprehensive audit log viewing in desktop application
+  - Filter logs by action, source, key, and date range
+  - Pagination support for large log volumes (20 entries per page)
+  - Real-time chain integrity verification with visual status
+  - Export logs to CSV and JSON formats
+  - Detailed log entry modal with full metadata
+  - Statistics display (total, success, failure counts)
+- Backend API enhancements for audit log search
+  - `SearchAuditLogs` with filtering and pagination
+  - `VerifyAuditLogs` for chain integrity verification
+  - `GetAuditLogStats` for summary statistics
+
 ## [0.4.1] - 2025-12-08
 
 ### Added

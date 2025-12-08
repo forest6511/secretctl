@@ -236,6 +236,12 @@ cd desktop && wails dev
 - Metadata support (URL, tags, notes)
 - Password visibility toggle
 - Auto-lock on idle timeout
+- **Audit Log Viewer** — View and analyze all vault activity
+  - Filter by action, source, key, and date range
+  - Pagination for large log volumes
+  - Chain integrity verification
+  - Export to CSV/JSON formats
+  - Detailed log entry modal
 - Modern React + TypeScript + Tailwind CSS frontend
 
 **Development:**
