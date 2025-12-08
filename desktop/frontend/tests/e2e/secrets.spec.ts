@@ -1,12 +1,12 @@
 import { test, expect } from '@playwright/test'
+import { TEST_PASSWORD } from './test-config'
 
 /**
  * Secrets CRUD E2E Tests
- * Tests: CORE-001 to CORE-005 (P0 Critical)
+ * Tests: CORE-001 to CORE-006 (P0 Critical)
  */
 
 test.describe('Secrets Management', () => {
-  const TEST_PASSWORD = 'SecurePassword123!'
   const TEST_SECRET = {
     key: 'test/api-key',
     value: 'sk-test-12345',
