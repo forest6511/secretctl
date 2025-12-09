@@ -46,7 +46,7 @@ export default defineConfig({
     command: 'cd .. && SECRETCTL_VAULT_DIR=/tmp/secretctl-e2e-test wails dev',
     url: 'http://localhost:34115',
     reuseExistingServer: !process.env.CI,
-    timeout: 60000, // Wails dev takes time to start
+    timeout: process.env.CI ? 120000 : 60000, // CI needs more time for cold start
     stdout: 'pipe',
     stderr: 'pipe',
   },
