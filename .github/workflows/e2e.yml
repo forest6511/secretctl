@@ -77,8 +77,6 @@ jobs:
 
       - name: Run E2E tests with xvfb
         working-directory: desktop/frontend
-        # Allow failures for now - some auth tests have timing issues in CI
-        continue-on-error: true
         run: xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" npm run test:e2e
         env:
           CI: true
