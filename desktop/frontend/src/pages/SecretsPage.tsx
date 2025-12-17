@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Search, Plus, Copy, Trash2, Eye, EyeOff, Key,
   Lock, RefreshCw, FileText, ExternalLink, Tag, ClipboardList
@@ -6,6 +6,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { useToast } from '@/hooks/useToast'
 import {
   ListSecrets, GetSecret, CreateSecret, UpdateSecret,
   DeleteSecret, CopyToClipboard, Lock as LockVault, ResetIdleTimer
@@ -26,7 +28,7 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
   const [showValue, setShowValue] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
-  const [copyFeedback, setCopyFeedback] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
   // Form state
   const [formKey, setFormKey] = useState('')
@@ -34,6 +36,48 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
   const [formNotes, setFormNotes] = useState('')
   const [formUrl, setFormUrl] = useState('')
   const [formTags, setFormTags] = useState('')
+
+  // Refs
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  // Hooks
+  const toast = useToast()
+
+  // Keyboard shortcuts handler
+  const handleKeyboardShortcuts = useCallback((e: KeyboardEvent) => {
+    const isMod = e.metaKey || e.ctrlKey
+
+    if (isMod && e.key === 'n') {
+      // Cmd/Ctrl + N: New secret
+      e.preventDefault()
+      handleStartCreate()
+    } else if (isMod && e.key === 'l') {
+      // Cmd/Ctrl + L: Lock vault
+      e.preventDefault()
+      handleLock()
+    } else if (isMod && e.key === 'f') {
+      // Cmd/Ctrl + F: Focus search
+      e.preventDefault()
+      searchInputRef.current?.focus()
+    } else if (isMod && e.key === 'c' && selectedSecret && !isEditing && !isCreating) {
+      // Cmd/Ctrl + C: Copy secret value (only when not editing text)
+      const selection = window.getSelection()
+      if (!selection || selection.toString() === '') {
+        e.preventDefault()
+        handleCopy()
+      }
+    } else if (isMod && e.key === 's' && (isEditing || isCreating)) {
+      // Cmd/Ctrl + S: Save
+      e.preventDefault()
+      handleSave()
+    } else if (e.key === 'Escape') {
+      // Escape: Cancel editing
+      if (isEditing || isCreating) {
+        e.preventDefault()
+        handleCancel()
+      }
+    }
+  }, [selectedSecret, isEditing, isCreating])
 
   useEffect(() => {
     loadSecrets()
@@ -47,13 +91,15 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
     const handleActivity = () => ResetIdleTimer()
     window.addEventListener('mousemove', handleActivity)
     window.addEventListener('keydown', handleActivity)
+    window.addEventListener('keydown', handleKeyboardShortcuts)
 
     return () => {
       unlisten()
       window.removeEventListener('mousemove', handleActivity)
       window.removeEventListener('keydown', handleActivity)
+      window.removeEventListener('keydown', handleKeyboardShortcuts)
     }
-  }, [onLocked])
+  }, [onLocked, handleKeyboardShortcuts])
 
   const loadSecrets = async () => {
     try {
@@ -81,10 +127,10 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
     if (!selectedSecret?.value) return
     try {
       await CopyToClipboard(selectedSecret.value)
-      setCopyFeedback(true)
-      setTimeout(() => setCopyFeedback(false), 2000)
+      toast.success('Copied! Auto-clears in 30s')
     } catch (err) {
       console.error('Failed to copy:', err)
+      toast.error('Failed to copy to clipboard')
     }
   }
 
@@ -97,17 +143,24 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
     }
   }
 
-  const handleDelete = async () => {
+  const handleDeleteClick = () => {
     if (!selectedKey) return
-    if (!confirm(`Delete secret "${selectedKey}"?`)) return
+    setDeleteDialogOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedKey) return
+    setDeleteDialogOpen(false)
 
     try {
       await DeleteSecret(selectedKey)
+      toast.success('Secret deleted')
       setSelectedKey(null)
       setSelectedSecret(null)
       await loadSecrets()
     } catch (err) {
       console.error('Failed to delete:', err)
+      toast.error('Failed to delete secret')
     }
   }
 
@@ -136,13 +189,24 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
   }
 
   const handleSave = async () => {
+    if (!formKey.trim()) {
+      toast.error('Key is required')
+      return
+    }
+    if (!formValue.trim()) {
+      toast.error('Value is required')
+      return
+    }
+
     const tags = formTags ? formTags.split(',').map(t => t.trim()).filter(Boolean) : []
 
     try {
       if (isCreating) {
         await CreateSecret(formKey, formValue, formNotes, formUrl, tags)
+        toast.success('Secret created')
       } else {
         await UpdateSecret(formKey, formValue, formNotes, formUrl, tags)
+        toast.success('Changes saved')
       }
       setIsCreating(false)
       setIsEditing(false)
@@ -152,6 +216,7 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
       }
     } catch (err) {
       console.error('Failed to save:', err)
+      toast.error(isCreating ? 'Failed to create secret' : 'Failed to save changes')
     }
   }
 
@@ -200,7 +265,8 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Search secrets..."
+              ref={searchInputRef}
+              placeholder="Search secrets... (⌘F)"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
@@ -339,7 +405,7 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
                   <Button variant="ghost" size="icon" onClick={handleStartEdit} title="Edit" data-testid="edit-secret-button">
                     <FileText className="w-4 h-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={handleDelete} title="Delete" data-testid="delete-secret-button">
+                  <Button variant="ghost" size="icon" onClick={handleDeleteClick} title="Delete" data-testid="delete-secret-button">
                     <Trash2 className="w-4 h-4 text-destructive" />
                   </Button>
                 </div>
@@ -370,15 +436,12 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
                     variant="ghost"
                     size="icon"
                     onClick={handleCopy}
-                    title="Copy"
+                    title="Copy (⌘C)"
                     data-testid="copy-secret-button"
                   >
-                    <Copy className={`w-4 h-4 ${copyFeedback ? 'text-green-500' : ''}`} />
+                    <Copy className="w-4 h-4" />
                   </Button>
                 </div>
-                {copyFeedback && (
-                  <p className="text-xs text-green-500">Copied! Auto-clears in 30s</p>
-                )}
               </div>
 
               {/* URL */}
@@ -440,6 +503,18 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        title="Delete Secret"
+        message={`Are you sure you want to delete "${selectedKey}"? This action cannot be undone.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="destructive"
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => setDeleteDialogOpen(false)}
+      />
     </div>
   )
 }
