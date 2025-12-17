@@ -7,10 +7,6 @@ const config: Config = {
   tagline: 'The simplest AI-ready secrets manager',
   favicon: 'img/favicon.ico',
 
-  future: {
-    v4: true,
-  },
-
   // GitHub Pages deployment
   url: 'https://forest6511.github.io',
   baseUrl: '/secretctl/',
