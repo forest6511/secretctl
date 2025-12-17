@@ -273,6 +273,7 @@ For reporting security vulnerabilities, please see [SECURITY.md](SECURITY.md).
 
 ## Documentation
 
+- [MCP Server Guide](docs/mcp-server.md) - Detailed MCP integration documentation
 - [Contributing Guide](CONTRIBUTING.md)
 - [Security Policy](SECURITY.md)
 
