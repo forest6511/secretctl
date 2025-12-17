@@ -154,6 +154,7 @@ This is a security-focused project. Please:
 
 ## Getting Help
 
+- 📚 Read the [Documentation](https://forest6511.github.io/secretctl/)
 - Open a [discussion](https://github.com/forest6511/secretctl/discussions) for questions
 - Check existing issues and documentation first
 - Be patient and respectful when asking for help
