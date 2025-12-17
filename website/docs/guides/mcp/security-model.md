@@ -15,7 +15,7 @@ secretctl follows the "Access Without Exposure" principle, ensuring AI agents ca
 3. **Command output is automatically sanitized to redact leaked secrets**
 4. **A policy file controls which commands AI can execute**
 
-This design aligns with industry best practices from 1Password and HashiCorp Vault.
+This design aligns with industry best practices for secrets management.
 
 ## How It Works
 
@@ -118,13 +118,3 @@ Output sanitization uses exact string matching. It does **not** detect:
 4. **Use key prefixes** - Organize secrets with prefixes (e.g., `aws/`, `db/`)
 5. **Set expirations** - Use `--expires` when setting sensitive secrets
 6. **Monitor audit logs** - Check `secretctl audit list` for unusual activity
-
-## Comparison with Industry
-
-| Feature | secretctl | 1Password | HashiCorp Vault |
-|---------|-----------|-----------|-----------------|
-| No plaintext to AI | ✅ | ✅ | ✅ |
-| Env var injection | ✅ | ✅ | ✅ |
-| Output sanitization | ✅ | N/A | ✅ |
-| Policy-based access | ✅ | ✅ | ✅ |
-| Local-first | ✅ | ❌ | ❌ |
