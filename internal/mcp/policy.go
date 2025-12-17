@@ -11,12 +11,19 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// EnvAliasMapping represents a single pattern-to-target mapping
+type EnvAliasMapping struct {
+	Pattern string `yaml:"pattern"`
+	Target  string `yaml:"target"`
+}
+
 // Policy represents the MCP policy configuration per mcp-design-ja.md §4
 type Policy struct {
-	Version         int      `yaml:"version"`
-	DefaultAction   string   `yaml:"default_action"`
-	DeniedCommands  []string `yaml:"denied_commands"`
-	AllowedCommands []string `yaml:"allowed_commands"`
+	Version         int                          `yaml:"version"`
+	DefaultAction   string                       `yaml:"default_action"`
+	DeniedCommands  []string                     `yaml:"denied_commands"`
+	AllowedCommands []string                     `yaml:"allowed_commands"`
+	EnvAliases      map[string][]EnvAliasMapping `yaml:"env_aliases"`
 }
 
 // PolicyFileName is the name of the policy file
@@ -39,6 +46,9 @@ var ErrPolicySymlink = errors.New("MCP policy file is a symlink")
 
 // ErrPolicyNotOwnedByUser is returned when policy file is not owned by current user
 var ErrPolicyNotOwnedByUser = errors.New("MCP policy file not owned by current user")
+
+// ErrEnvNotFound is returned when the specified environment alias is not found
+var ErrEnvNotFound = errors.New("environment alias not found")
 
 // LoadPolicy loads the MCP policy from the vault directory.
 // Implements TOCTOU-safe loading per mcp-design-ja.md §4.5.2
@@ -173,4 +183,105 @@ func DefaultDeniedCommands() []string {
 		"export",
 		"cat /proc/*/environ",
 	}
+}
+
+// ResolveAlias resolves a key pattern using environment aliases.
+// If env is empty, returns the original key unchanged.
+// If env is specified but not found in policy, returns ErrEnvNotFound.
+// If env is specified and found, applies matching alias transformations.
+func (p *Policy) ResolveAlias(env, key string) (string, error) {
+	// No environment specified, return key unchanged
+	if env == "" {
+		return key, nil
+	}
+
+	// No aliases configured
+	if p.EnvAliases == nil {
+		return "", fmt.Errorf("%w: '%s'", ErrEnvNotFound, env)
+	}
+
+	// Look up environment aliases
+	aliases, exists := p.EnvAliases[env]
+	if !exists {
+		return "", fmt.Errorf("%w: '%s'", ErrEnvNotFound, env)
+	}
+
+	// Try to match each alias pattern
+	for _, alias := range aliases {
+		if matched, result := matchAndTransform(key, alias.Pattern, alias.Target); matched {
+			return result, nil
+		}
+	}
+
+	// No matching alias, return key unchanged
+	return key, nil
+}
+
+// ResolveAliasKeys resolves multiple keys using environment aliases.
+// Returns the resolved keys and any error encountered.
+func (p *Policy) ResolveAliasKeys(env string, keys []string) ([]string, error) {
+	if env == "" {
+		return keys, nil
+	}
+
+	resolved := make([]string, 0, len(keys))
+	for _, key := range keys {
+		r, err := p.ResolveAlias(env, key)
+		if err != nil {
+			return nil, err
+		}
+		resolved = append(resolved, r)
+	}
+	return resolved, nil
+}
+
+// HasEnvAlias checks if the specified environment alias exists
+func (p *Policy) HasEnvAlias(env string) bool {
+	if p.EnvAliases == nil {
+		return false
+	}
+	_, exists := p.EnvAliases[env]
+	return exists
+}
+
+// ListEnvAliases returns all available environment alias names
+func (p *Policy) ListEnvAliases() []string {
+	if p.EnvAliases == nil {
+		return nil
+	}
+	names := make([]string, 0, len(p.EnvAliases))
+	for name := range p.EnvAliases {
+		names = append(names, name)
+	}
+	return names
+}
+
+// matchAndTransform checks if key matches pattern and applies transformation.
+// Pattern supports glob-style wildcards:
+//   - "db/*" matches "db/host", "db/password", etc.
+//   - "*" at the end matches any suffix
+//
+// Returns (matched, transformedKey)
+func matchAndTransform(key, pattern, target string) (matched bool, transformedKey string) {
+	// Handle wildcard patterns
+	if pattern != "" && pattern[len(pattern)-1] == '*' {
+		prefix := pattern[:len(pattern)-1]
+		if len(key) >= len(prefix) && key[:len(prefix)] == prefix {
+			// Extract the suffix that matched the wildcard
+			suffix := key[len(prefix):]
+			// Apply to target (replace * with the matched suffix)
+			if target != "" && target[len(target)-1] == '*' {
+				return true, target[:len(target)-1] + suffix
+			}
+			return true, target + suffix
+		}
+		return false, ""
+	}
+
+	// Exact match
+	if key == pattern {
+		return true, target
+	}
+
+	return false, ""
 }

@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/forest6511/secretctl/internal/mcp"
 )
 
 // Run command flags
@@ -25,6 +27,7 @@ var (
 	runNoSanitize    bool
 	runEnvPrefix     string
 	runObfuscateKeys bool
+	runEnvAlias      string
 )
 
 // Exit codes per requirements-ja.md §1.3
@@ -43,6 +46,7 @@ func init() {
 	runCmd.Flags().BoolVar(&runNoSanitize, "no-sanitize", false, "Disable output sanitization")
 	runCmd.Flags().StringVar(&runEnvPrefix, "env-prefix", "", "Environment variable name prefix")
 	runCmd.Flags().BoolVar(&runObfuscateKeys, "obfuscate-keys", false, "Obfuscate secret key names in error messages")
+	runCmd.Flags().StringVar(&runEnvAlias, "env", "", "Environment alias (e.g., dev, staging, prod)")
 
 	_ = runCmd.MarkFlagRequired("key")
 }
@@ -58,11 +62,17 @@ Secrets are converted to environment variable names using these rules:
   - '-' is replaced with '_'
   - Names are converted to UPPERCASE
 
+Environment Aliases:
+  Use --env to apply environment-specific key transformations defined in mcp-policy.yaml.
+  For example, --env=dev with key "db/*" might resolve to "dev/db/*".
+
 Examples:
   secretctl run -k API_KEY -- curl https://api.example.com
   secretctl run -k DB_HOST -k DB_USER -k DB_PASS -- psql
   secretctl run -k "aws/prod/*" -- aws s3 ls
-  secretctl run -k API_KEY --timeout=30s -- ./script.sh`,
+  secretctl run -k API_KEY --timeout=30s -- ./script.sh
+  secretctl run --env=dev -k "db/*" -- ./app
+  secretctl run --env=prod -k "api/*" -- kubectl apply -f deployment.yaml`,
 	DisableFlagsInUseLine: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Find the command after "--"
@@ -88,8 +98,18 @@ func executeRun(commandArgs []string) error {
 	}
 	defer v.Lock()
 
-	// 2. Expand key patterns and collect secrets
-	secrets, err := collectSecrets(runKeys)
+	// 2. Resolve environment aliases if --env is specified
+	keys := runKeys
+	if runEnvAlias != "" {
+		resolvedKeys, err := resolveEnvAliases(runEnvAlias, runKeys)
+		if err != nil {
+			return err
+		}
+		keys = resolvedKeys
+	}
+
+	// 3. Expand key patterns and collect secrets
+	secrets, err := collectSecrets(keys)
 	if err != nil {
 		return err
 	}
@@ -647,4 +667,34 @@ func (s *outputSanitizer) sanitize(data []byte) []byte {
 		}
 	}
 	return result
+}
+
+// resolveEnvAliases resolves key patterns using environment aliases from mcp-policy.yaml.
+// If the policy file doesn't exist or the environment is not found, returns an error.
+func resolveEnvAliases(env string, keys []string) ([]string, error) {
+	// Load policy from vault directory
+	vaultDir := os.Getenv("SECRETCTL_VAULT_DIR")
+	if vaultDir == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get home directory: %w", err)
+		}
+		vaultDir = filepath.Join(homeDir, ".secretctl")
+	}
+
+	policy, err := mcp.LoadPolicy(vaultDir)
+	if err != nil {
+		if errors.Is(err, mcp.ErrPolicyNotFound) {
+			return nil, fmt.Errorf("--env requires mcp-policy.yaml: %w", err)
+		}
+		return nil, fmt.Errorf("failed to load policy: %w", err)
+	}
+
+	// Resolve each key using the environment aliases
+	resolved, err := policy.ResolveAliasKeys(env, keys)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve environment alias '%s': %w", env, err)
+	}
+
+	return resolved, nil
 }

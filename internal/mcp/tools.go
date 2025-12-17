@@ -77,6 +77,7 @@ type SecretRunInput struct {
 	Args      []string `json:"args,omitempty"`
 	Timeout   string   `json:"timeout,omitempty"`
 	EnvPrefix string   `json:"env_prefix,omitempty"`
+	Env       string   `json:"env,omitempty"` // Environment alias (e.g., "dev", "staging", "prod")
 }
 
 // SecretRunOutput represents output for secret_run tool.
@@ -267,6 +268,16 @@ func (s *Server) handleSecretRun(ctx context.Context, _ *mcp.CallToolRequest, in
 		return nil, SecretRunOutput{}, fmt.Errorf("command not allowed by policy: %s", reason)
 	}
 
+	// Resolve environment aliases if env is specified
+	keys := input.Keys
+	if input.Env != "" {
+		resolvedKeys, err := s.policy.ResolveAliasKeys(input.Env, input.Keys)
+		if err != nil {
+			return nil, SecretRunOutput{}, fmt.Errorf("failed to resolve environment alias '%s': %w", input.Env, err)
+		}
+		keys = resolvedKeys
+	}
+
 	// Parse timeout
 	timeout := 5 * time.Minute // default per design
 	if input.Timeout != "" {
@@ -285,8 +296,8 @@ func (s *Server) handleSecretRun(ctx context.Context, _ *mcp.CallToolRequest, in
 		timeout = time.Hour
 	}
 
-	// Collect secrets
-	secrets, err := s.collectSecrets(input.Keys)
+	// Collect secrets (using resolved keys if env alias was applied)
+	secrets, err := s.collectSecrets(keys)
 	if err != nil {
 		return nil, SecretRunOutput{}, err
 	}

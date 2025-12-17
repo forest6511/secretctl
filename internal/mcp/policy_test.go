@@ -369,4 +369,310 @@ func TestPolicyErrors(t *testing.T) {
 	if ErrPolicyNotOwnedByUser == nil {
 		t.Error("ErrPolicyNotOwnedByUser is nil")
 	}
+	if ErrEnvNotFound == nil {
+		t.Error("ErrEnvNotFound is nil")
+	}
+}
+
+func TestLoadPolicy_WithEnvAliases(t *testing.T) {
+	tmpDir := t.TempDir()
+	policyPath := filepath.Join(tmpDir, PolicyFileName)
+
+	content := `version: 1
+default_action: deny
+allowed_commands:
+  - aws
+env_aliases:
+  dev:
+    - pattern: "db/*"
+      target: "dev/db/*"
+    - pattern: "api/*"
+      target: "dev/api/*"
+  prod:
+    - pattern: "db/*"
+      target: "prod/db/*"
+`
+	if err := os.WriteFile(policyPath, []byte(content), 0600); err != nil {
+		t.Fatalf("failed to write policy file: %v", err)
+	}
+
+	policy, err := LoadPolicy(tmpDir)
+	if err != nil {
+		t.Fatalf("LoadPolicy failed: %v", err)
+	}
+
+	if len(policy.EnvAliases) != 2 {
+		t.Errorf("expected 2 env aliases, got %d", len(policy.EnvAliases))
+	}
+	if len(policy.EnvAliases["dev"]) != 2 {
+		t.Errorf("expected 2 dev aliases, got %d", len(policy.EnvAliases["dev"]))
+	}
+	if len(policy.EnvAliases["prod"]) != 1 {
+		t.Errorf("expected 1 prod alias, got %d", len(policy.EnvAliases["prod"]))
+	}
+}
+
+func TestResolveAlias_NoEnv(t *testing.T) {
+	policy := &Policy{
+		Version:       1,
+		DefaultAction: ActionDeny,
+		EnvAliases: map[string][]EnvAliasMapping{
+			"dev": {{Pattern: "db/*", Target: "dev/db/*"}},
+		},
+	}
+
+	// When env is empty, key should be returned unchanged
+	result, err := policy.ResolveAlias("", "db/host")
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if result != "db/host" {
+		t.Errorf("expected 'db/host', got '%s'", result)
+	}
+}
+
+func TestResolveAlias_EnvNotFound(t *testing.T) {
+	policy := &Policy{
+		Version:       1,
+		DefaultAction: ActionDeny,
+		EnvAliases: map[string][]EnvAliasMapping{
+			"dev": {{Pattern: "db/*", Target: "dev/db/*"}},
+		},
+	}
+
+	_, err := policy.ResolveAlias("staging", "db/host")
+	if err == nil {
+		t.Error("expected error for unknown environment")
+	}
+}
+
+func TestResolveAlias_NoAliasesConfigured(t *testing.T) {
+	policy := &Policy{
+		Version:       1,
+		DefaultAction: ActionDeny,
+	}
+
+	_, err := policy.ResolveAlias("dev", "db/host")
+	if err == nil {
+		t.Error("expected error when no aliases configured")
+	}
+}
+
+func TestResolveAlias_WildcardPattern(t *testing.T) {
+	policy := &Policy{
+		Version:       1,
+		DefaultAction: ActionDeny,
+		EnvAliases: map[string][]EnvAliasMapping{
+			"dev": {
+				{Pattern: "db/*", Target: "dev/db/*"},
+				{Pattern: "api/*", Target: "dev/api/*"},
+			},
+			"prod": {
+				{Pattern: "db/*", Target: "prod/db/*"},
+			},
+		},
+	}
+
+	tests := []struct {
+		name     string
+		env      string
+		key      string
+		expected string
+	}{
+		{"dev db host", "dev", "db/host", "dev/db/host"},
+		{"dev db password", "dev", "db/password", "dev/db/password"},
+		{"dev api key", "dev", "api/key", "dev/api/key"},
+		{"prod db host", "prod", "db/host", "prod/db/host"},
+		{"no match returns unchanged", "dev", "other/key", "other/key"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := policy.ResolveAlias(tt.env, tt.key)
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("ResolveAlias(%s, %s) = %s, want %s", tt.env, tt.key, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestResolveAlias_ExactMatch(t *testing.T) {
+	policy := &Policy{
+		Version:       1,
+		DefaultAction: ActionDeny,
+		EnvAliases: map[string][]EnvAliasMapping{
+			"dev": {
+				{Pattern: "special_key", Target: "dev/special"},
+			},
+		},
+	}
+
+	result, err := policy.ResolveAlias("dev", "special_key")
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if result != "dev/special" {
+		t.Errorf("expected 'dev/special', got '%s'", result)
+	}
+}
+
+func TestResolveAliasKeys(t *testing.T) {
+	policy := &Policy{
+		Version:       1,
+		DefaultAction: ActionDeny,
+		EnvAliases: map[string][]EnvAliasMapping{
+			"dev": {
+				{Pattern: "db/*", Target: "dev/db/*"},
+				{Pattern: "api/*", Target: "dev/api/*"},
+			},
+		},
+	}
+
+	keys := []string{"db/host", "db/password", "api/key"}
+	resolved, err := policy.ResolveAliasKeys("dev", keys)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expected := []string{"dev/db/host", "dev/db/password", "dev/api/key"}
+	if len(resolved) != len(expected) {
+		t.Fatalf("expected %d keys, got %d", len(expected), len(resolved))
+	}
+	for i, exp := range expected {
+		if resolved[i] != exp {
+			t.Errorf("resolved[%d] = %s, want %s", i, resolved[i], exp)
+		}
+	}
+}
+
+func TestResolveAliasKeys_EmptyEnv(t *testing.T) {
+	policy := &Policy{
+		Version:       1,
+		DefaultAction: ActionDeny,
+		EnvAliases: map[string][]EnvAliasMapping{
+			"dev": {{Pattern: "db/*", Target: "dev/db/*"}},
+		},
+	}
+
+	keys := []string{"db/host", "db/password"}
+	resolved, err := policy.ResolveAliasKeys("", keys)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should return original keys unchanged
+	if len(resolved) != len(keys) {
+		t.Fatalf("expected %d keys, got %d", len(keys), len(resolved))
+	}
+	for i := range keys {
+		if resolved[i] != keys[i] {
+			t.Errorf("resolved[%d] = %s, want %s", i, resolved[i], keys[i])
+		}
+	}
+}
+
+func TestHasEnvAlias(t *testing.T) {
+	policy := &Policy{
+		Version:       1,
+		DefaultAction: ActionDeny,
+		EnvAliases: map[string][]EnvAliasMapping{
+			"dev":  {{Pattern: "db/*", Target: "dev/db/*"}},
+			"prod": {{Pattern: "db/*", Target: "prod/db/*"}},
+		},
+	}
+
+	if !policy.HasEnvAlias("dev") {
+		t.Error("expected HasEnvAlias('dev') to return true")
+	}
+	if !policy.HasEnvAlias("prod") {
+		t.Error("expected HasEnvAlias('prod') to return true")
+	}
+	if policy.HasEnvAlias("staging") {
+		t.Error("expected HasEnvAlias('staging') to return false")
+	}
+}
+
+func TestHasEnvAlias_NoAliases(t *testing.T) {
+	policy := &Policy{
+		Version:       1,
+		DefaultAction: ActionDeny,
+	}
+
+	if policy.HasEnvAlias("dev") {
+		t.Error("expected HasEnvAlias to return false when no aliases configured")
+	}
+}
+
+func TestListEnvAliases(t *testing.T) {
+	policy := &Policy{
+		Version:       1,
+		DefaultAction: ActionDeny,
+		EnvAliases: map[string][]EnvAliasMapping{
+			"dev":     {{Pattern: "db/*", Target: "dev/db/*"}},
+			"staging": {{Pattern: "db/*", Target: "staging/db/*"}},
+			"prod":    {{Pattern: "db/*", Target: "prod/db/*"}},
+		},
+	}
+
+	names := policy.ListEnvAliases()
+	if len(names) != 3 {
+		t.Errorf("expected 3 aliases, got %d", len(names))
+	}
+
+	// Check all expected names are present
+	expected := map[string]bool{"dev": true, "staging": true, "prod": true}
+	for _, name := range names {
+		if !expected[name] {
+			t.Errorf("unexpected alias name: %s", name)
+		}
+		delete(expected, name)
+	}
+	if len(expected) > 0 {
+		t.Errorf("missing alias names: %v", expected)
+	}
+}
+
+func TestListEnvAliases_Empty(t *testing.T) {
+	policy := &Policy{
+		Version:       1,
+		DefaultAction: ActionDeny,
+	}
+
+	names := policy.ListEnvAliases()
+	if names != nil {
+		t.Errorf("expected nil, got %v", names)
+	}
+}
+
+func TestMatchAndTransform(t *testing.T) {
+	tests := []struct {
+		name     string
+		key      string
+		pattern  string
+		target   string
+		matched  bool
+		expected string
+	}{
+		{"exact match", "api_key", "api_key", "secret/api_key", true, "secret/api_key"},
+		{"wildcard prefix", "db/host", "db/*", "dev/db/*", true, "dev/db/host"},
+		{"wildcard with path", "api/v1/key", "api/*", "dev/api/*", true, "dev/api/v1/key"},
+		{"no match", "other/key", "db/*", "dev/db/*", false, ""},
+		{"exact no match", "api_key", "other_key", "secret/other", false, ""},
+		{"target without wildcard", "db/host", "db/*", "dev/database/", true, "dev/database/host"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			matched, result := matchAndTransform(tt.key, tt.pattern, tt.target)
+			if matched != tt.matched {
+				t.Errorf("matchAndTransform matched = %v, want %v", matched, tt.matched)
+			}
+			if result != tt.expected {
+				t.Errorf("matchAndTransform result = %s, want %s", result, tt.expected)
+			}
+		})
+	}
 }
