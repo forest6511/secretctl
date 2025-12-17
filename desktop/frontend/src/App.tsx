@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { AuthPage } from '@/pages/AuthPage'
 import { SecretsPage } from '@/pages/SecretsPage'
 import { AuditPage } from '@/pages/AuditPage'
+import { ToastProvider } from '@/hooks/useToast'
 import { GetAuthStatus } from '../wailsjs/go/main/App'
 
 type Page = 'secrets' | 'audit'
@@ -32,18 +33,28 @@ function App() {
   }
 
   if (!isAuthenticated) {
-    return <AuthPage onAuthenticated={() => setIsAuthenticated(true)} />
+    return (
+      <ToastProvider>
+        <AuthPage onAuthenticated={() => setIsAuthenticated(true)} />
+      </ToastProvider>
+    )
   }
 
   if (currentPage === 'audit') {
-    return <AuditPage onNavigateBack={() => setCurrentPage('secrets')} />
+    return (
+      <ToastProvider>
+        <AuditPage onNavigateBack={() => setCurrentPage('secrets')} />
+      </ToastProvider>
+    )
   }
 
   return (
-    <SecretsPage
-      onLocked={() => setIsAuthenticated(false)}
-      onNavigateToAudit={() => setCurrentPage('audit')}
-    />
+    <ToastProvider>
+      <SecretsPage
+        onLocked={() => setIsAuthenticated(false)}
+        onNavigateToAudit={() => setCurrentPage('audit')}
+      />
+    </ToastProvider>
   )
 }
 
