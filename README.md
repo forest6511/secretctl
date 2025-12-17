@@ -6,6 +6,7 @@ No infrastructure. No subscription. No complexity.
 
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Documentation](https://img.shields.io/badge/docs-website-blue)](https://forest6511.github.io/secretctl/)
 
 ---
 
@@ -273,7 +274,12 @@ For reporting security vulnerabilities, please see [SECURITY.md](SECURITY.md).
 
 ## Documentation
 
-- [MCP Server Guide](docs/mcp-server.md) - Detailed MCP integration documentation
+📚 **[Full Documentation](https://forest6511.github.io/secretctl/)** — Getting started, guides, and reference
+
+- [Getting Started](https://forest6511.github.io/secretctl/docs/getting-started/) - Installation and quick start
+- [CLI Guide](https://forest6511.github.io/secretctl/docs/guides/cli/) - Command-line usage
+- [MCP Integration](https://forest6511.github.io/secretctl/docs/guides/mcp/) - AI agent integration
+- [Desktop App](https://forest6511.github.io/secretctl/docs/guides/desktop/) - Native application guide
 - [Contributing Guide](CONTRIBUTING.md)
 - [Security Policy](SECURITY.md)
 
