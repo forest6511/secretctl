@@ -169,9 +169,19 @@ Execute a command with secrets injected as environment variables.
   "args": ["s3", "ls"],
   "keys": ["aws/access_key", "aws/secret_key"],
   "timeout": "30s",
-  "env_prefix": "AWS_"
+  "env_prefix": "AWS_",
+  "env": "prod"
 }
 ```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `command` | string | yes | Command to execute |
+| `args` | string[] | no | Command arguments |
+| `keys` | string[] | yes | Secret key patterns (glob supported) |
+| `timeout` | string | no | Execution timeout (default: 5m, max: 1h) |
+| `env_prefix` | string | no | Prefix for environment variable names |
+| `env` | string | no | Environment alias (e.g., "dev", "staging", "prod") |
 
 **Features:**
 - Secrets are injected as environment variables
@@ -249,6 +259,65 @@ denied_commands:
   - printenv   # Can leak all environment variables
   - set        # Can leak shell state
   - export     # Can leak all exports
+
+# Environment aliases for key pattern transformation
+env_aliases:
+  dev:
+    - pattern: "db/*"
+      target: "dev/db/*"
+    - pattern: "api/*"
+      target: "dev/api/*"
+  staging:
+    - pattern: "db/*"
+      target: "staging/db/*"
+  prod:
+    - pattern: "db/*"
+      target: "prod/db/*"
+```
+
+### Environment Aliases
+
+Environment aliases allow seamless switching between different secret prefixes (dev/staging/prod) without changing secret key patterns. This is particularly useful for AI assistants that need to work with different environments.
+
+**How it works:**
+
+1. Define aliases in your policy file under `env_aliases`
+2. Use the `env` parameter in `secret_run` to select an alias
+3. Key patterns are transformed before secret lookup
+
+**Example:**
+
+With the policy above:
+```json
+{
+  "command": "kubectl",
+  "args": ["apply", "-f", "deployment.yaml"],
+  "keys": ["db/*"],
+  "env": "prod"
+}
+```
+
+The key pattern `db/*` is transformed to `prod/db/*`, so secrets like:
+- `prod/db/host`
+- `prod/db/password`
+- `prod/db/username`
+
+...will be injected as environment variables.
+
+**Pattern Matching:**
+
+| Pattern | Key | Result |
+|---------|-----|--------|
+| `db/*` | `db/host` | Matches suffix `host` |
+| `api/*` | `api/v1/key` | Matches suffix `v1/key` |
+| `special_key` | `special_key` | Exact match |
+
+**CLI Usage:**
+
+The `--env` flag is also available for CLI:
+```bash
+secretctl run --env=dev -k "db/*" -- ./app
+secretctl run --env=prod -k "api/*" -- kubectl apply -f deployment.yaml
 ```
 
 ### Security Considerations
