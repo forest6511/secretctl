@@ -99,11 +99,6 @@ const config: Config = {
           position: 'left',
         },
         {
-          to: '/docs/comparison/',
-          label: 'Compare',
-          position: 'left',
-        },
-        {
           href: 'https://github.com/forest6511/secretctl',
           label: 'GitHub',
           position: 'right',
@@ -120,14 +115,6 @@ const config: Config = {
             {label: 'Getting Started', to: '/docs/getting-started/'},
             {label: 'CLI Guide', to: '/docs/guides/cli/'},
             {label: 'MCP Integration', to: '/docs/guides/mcp/'},
-          ],
-        },
-        {
-          title: 'Compare',
-          items: [
-            {label: 'vs 1Password CLI', to: '/docs/comparison/vs-1password-cli'},
-            {label: 'vs HashiCorp Vault', to: '/docs/comparison/vs-vault'},
-            {label: 'Feature Matrix', to: '/docs/comparison/feature-matrix'},
           ],
         },
         {

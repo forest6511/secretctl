@@ -62,17 +62,6 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
-      label: 'Comparison',
-      items: [
-        'comparison/index',
-        'comparison/vs-1password-cli',
-        'comparison/vs-vault',
-        'comparison/vs-infisical',
-        'comparison/feature-matrix',
-      ],
-    },
-    {
-      type: 'category',
       label: 'Migration',
       items: [
         'migration/index',
