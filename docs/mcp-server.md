@@ -19,6 +19,24 @@ This design aligns with industry best practices from 1Password and HashiCorp Vau
 
 ## Quick Start
 
+### 0. Create Policy File (Required)
+
+Before starting the MCP server, create a policy file to control which commands AI can execute:
+
+```bash
+mkdir -p ~/.secretctl
+cat > ~/.secretctl/mcp-policy.yaml << 'EOF'
+version: 1
+default_action: deny
+allowed_commands:
+  - aws
+  - gcloud
+  - kubectl
+EOF
+```
+
+See [Policy Configuration](#policy-configuration) for detailed options.
+
 ### 1. Start the MCP Server
 
 ```bash
@@ -156,10 +174,25 @@ Execute a command with secrets injected as environment variables.
 ```
 
 **Features:**
-- Secrets are injected as environment variables (e.g., `AWS_ACCESS_KEY`)
+- Secrets are injected as environment variables
 - Output is automatically sanitized to replace any leaked secrets with `[REDACTED:key]`
 - Requires policy approval (see Policy Configuration below)
 - Maximum 5 concurrent executions
+
+**Environment Variable Naming:**
+
+Secret keys are transformed to environment variable names as follows:
+1. Slashes (`/`) are replaced with underscores (`_`)
+2. Hyphens (`-`) are replaced with underscores (`_`)
+3. The result is converted to UPPERCASE
+4. If `env_prefix` is specified, it is prepended
+
+| Secret Key | env_prefix | Environment Variable |
+|------------|------------|---------------------|
+| `aws/access_key` | (none) | `AWS_ACCESS_KEY` |
+| `aws/access_key` | `MY_` | `MY_AWS_ACCESS_KEY` |
+| `db-password` | (none) | `DB_PASSWORD` |
+| `api/prod/key` | `APP_` | `APP_API_PROD_KEY` |
 
 **Example Response:**
 ```json
