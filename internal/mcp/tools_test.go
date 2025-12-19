@@ -181,7 +181,7 @@ func TestOutputSanitizer(t *testing.T) {
 	secrets := []secretData{
 		{key: "API_KEY", value: []byte("secret123")},
 		{key: "DB_PASS", value: []byte("password456")},
-		{key: "SHORT", value: []byte("abc")}, // too short, should be skipped
+		{key: "SHORT", value: []byte("abc")}, // short secrets ARE redacted (security fix)
 	}
 
 	sanitizer := newOutputSanitizer(secrets)
@@ -207,9 +207,9 @@ func TestOutputSanitizer(t *testing.T) {
 			expected: "key=[REDACTED:API_KEY] pass=[REDACTED:DB_PASS]",
 		},
 		{
-			name:     "short secret not redacted",
+			name:     "short secret IS redacted",
 			input:    "short=abc",
-			expected: "short=abc",
+			expected: "short=[REDACTED:SHORT]",
 		},
 	}
 
@@ -378,6 +378,127 @@ func TestOutputSanitizerEmpty(t *testing.T) {
 
 	if string(result) != string(input) {
 		t.Errorf("sanitize with no secrets = %q, want %q", result, input)
+	}
+}
+
+func TestOutputSanitizerEncodedForms(t *testing.T) {
+	// Test secret: "password" (known values for encoding)
+	secrets := []secretData{
+		{key: "SECRET", value: []byte("password")},
+	}
+	sanitizer := newOutputSanitizer(secrets)
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "raw value",
+			input:    "value=password",
+			expected: "value=[REDACTED:SECRET]",
+		},
+		{
+			name:     "base64 encoded (padded)",
+			input:    "encoded=cGFzc3dvcmQ=", // base64("password")
+			expected: "encoded=[REDACTED:SECRET]",
+		},
+		{
+			name:     "base64 encoded (raw/unpadded)",
+			input:    "jwt=cGFzc3dvcmQ", // raw base64 without padding
+			expected: "jwt=[REDACTED:SECRET]",
+		},
+		{
+			name:     "hex lowercase",
+			input:    "hex=70617373776f7264", // hex("password")
+			expected: "hex=[REDACTED:SECRET]",
+		},
+		{
+			name:     "hex uppercase",
+			input:    "hex=70617373776F7264", // HEX("password") - uppercase
+			expected: "hex=[REDACTED:SECRET]",
+		},
+		{
+			name:     "hex with 0x prefix lowercase",
+			input:    "debug=0x70617373776f7264",
+			expected: "debug=[REDACTED:SECRET]",
+		},
+		{
+			name:     "hex with 0X prefix uppercase",
+			input:    "debug=0X70617373776F7264",
+			expected: "debug=[REDACTED:SECRET]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := string(sanitizer.sanitize([]byte(tt.input)))
+			if result != tt.expected {
+				t.Errorf("sanitize(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestOutputSanitizerURLEncoded(t *testing.T) {
+	// Test secret with special chars that will be URL-encoded differently
+	secrets := []secretData{
+		{key: "PASS", value: []byte("pass word!")}, // contains space and !
+	}
+	sanitizer := newOutputSanitizer(secrets)
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "raw value",
+			input:    "p=pass word!",
+			expected: "p=[REDACTED:PASS]",
+		},
+		{
+			name:     "QueryEscape (space as +)",
+			input:    "p=pass+word%21", // url.QueryEscape("pass word!")
+			expected: "p=[REDACTED:PASS]",
+		},
+		{
+			name:     "PathEscape (space as %20)",
+			input:    "p=pass%20word%21", // url.PathEscape("pass word!")
+			expected: "p=[REDACTED:PASS]",
+		},
+		{
+			name:     "lowercase percent codes",
+			input:    "p=pass+word%21", // lowercase should also match
+			expected: "p=[REDACTED:PASS]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := string(sanitizer.sanitize([]byte(tt.input)))
+			if result != tt.expected {
+				t.Errorf("sanitize(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestOutputSanitizerLongestFirst(t *testing.T) {
+	// Test that longer matches are replaced first to avoid partial replacements
+	secrets := []secretData{
+		{key: "SHORT", value: []byte("secret")},
+		{key: "LONG", value: []byte("secretkey")}, // contains "secret"
+	}
+	sanitizer := newOutputSanitizer(secrets)
+
+	// "secretkey" should be replaced as a whole, not "secret" + "key"
+	input := "value=secretkey"
+	result := string(sanitizer.sanitize([]byte(input)))
+	expected := "value=[REDACTED:LONG]"
+
+	if result != expected {
+		t.Errorf("sanitize(%q) = %q, want %q", input, result, expected)
 	}
 }
 
