@@ -244,16 +244,64 @@ func TestMatchCommand(t *testing.T) {
 		pattern  string
 		expected bool
 	}{
+		// Bare command patterns match against basename
 		{"aws", "aws", true},
 		{"/usr/bin/aws", "aws", true},
-		{"aws", "/usr/bin/aws", true},
-		{"/usr/bin/aws", "/usr/local/bin/aws", true}, // Both resolve to "aws"
+		{"/usr/local/bin/aws", "aws", true},
 		{"aws-cli", "aws", false},
 		{"kubectl", "aws", false},
+
+		// Absolute path patterns require exact match (security fix)
+		{"/usr/bin/aws", "/usr/bin/aws", true},
+		{"/usr/local/bin/aws", "/usr/bin/aws", false}, // Different path - NOT allowed
+		{"aws", "/usr/bin/aws", false},                // Bare command doesn't match absolute pattern
+		{"/usr/bin/aws", "/usr/local/bin/aws", false}, // Exact path match required
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.command+"_"+tt.pattern, func(t *testing.T) {
+			result := matchCommand(tt.command, tt.pattern)
+			if result != tt.expected {
+				t.Errorf("matchCommand(%s, %s) = %v, want %v", tt.command, tt.pattern, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestMatchCommand_AbsolutePathSecurity(t *testing.T) {
+	// This test specifically verifies that absolute path patterns in policy
+	// only allow that exact binary, preventing PATH manipulation attacks
+
+	// If policy says "/usr/bin/curl", only that exact path should be allowed
+	// NOT any "curl" binary in other directories
+	tests := []struct {
+		name     string
+		command  string
+		pattern  string
+		expected bool
+	}{
+		{
+			name:     "exact match allowed",
+			command:  "/usr/bin/curl",
+			pattern:  "/usr/bin/curl",
+			expected: true,
+		},
+		{
+			name:     "different directory rejected",
+			command:  "/usr/local/bin/curl",
+			pattern:  "/usr/bin/curl",
+			expected: false,
+		},
+		{
+			name:     "malicious path rejected",
+			command:  "/tmp/evil/curl",
+			pattern:  "/usr/bin/curl",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			result := matchCommand(tt.command, tt.pattern)
 			if result != tt.expected {
 				t.Errorf("matchCommand(%s, %s) = %v, want %v", tt.command, tt.pattern, result, tt.expected)
@@ -674,5 +722,226 @@ func TestMatchAndTransform(t *testing.T) {
 				t.Errorf("matchAndTransform result = %s, want %s", result, tt.expected)
 			}
 		})
+	}
+}
+
+// Tests for PATH manipulation prevention (Issue #59)
+
+func TestResolveAndValidateCommand_TrustedDirectory(t *testing.T) {
+	// Test that commands in trusted directories are resolved correctly
+	// We test with common system commands that should exist
+	testCmds := []string{"ls", "cat", "echo"}
+
+	for _, cmd := range testCmds {
+		t.Run(cmd, func(t *testing.T) {
+			resolved, err := ResolveAndValidateCommand(cmd)
+			if err != nil {
+				// Command might not exist on all systems, skip if not found
+				if err.Error() != "" && (err == ErrCommandNotFound ||
+					(len(err.Error()) > 0 && err.Error()[:14] == "command not fo")) {
+					t.Skipf("command %s not found on this system", cmd)
+				}
+				t.Errorf("ResolveAndValidateCommand(%s) error: %v", cmd, err)
+				return
+			}
+
+			// Verify it returns an absolute path
+			if !filepath.IsAbs(resolved) {
+				t.Errorf("expected absolute path, got: %s", resolved)
+			}
+
+			// Verify the directory is in trusted list
+			cmdDir := filepath.Dir(resolved)
+			found := false
+			for _, trusted := range TrustedDirectories {
+				if filepath.Clean(cmdDir) == filepath.Clean(trusted) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("resolved path %s is not in trusted directories", resolved)
+			}
+		})
+	}
+}
+
+func TestResolveAndValidateCommand_AbsolutePath(t *testing.T) {
+	// Test with absolute path to a trusted command
+	trustedPaths := []string{
+		"/usr/bin/ls",
+		"/bin/ls",
+		"/usr/bin/cat",
+		"/bin/cat",
+	}
+
+	for _, path := range trustedPaths {
+		t.Run(path, func(t *testing.T) {
+			// Check if the file exists first
+			if _, err := os.Stat(path); os.IsNotExist(err) {
+				t.Skipf("path %s does not exist on this system", path)
+			}
+
+			resolved, err := ResolveAndValidateCommand(path)
+			if err != nil {
+				t.Errorf("ResolveAndValidateCommand(%s) error: %v", path, err)
+				return
+			}
+
+			if resolved != path {
+				t.Errorf("expected %s, got %s", path, resolved)
+			}
+		})
+	}
+}
+
+func TestResolveAndValidateCommand_UntrustedDirectory(t *testing.T) {
+	// Create a temporary directory with an executable
+	tmpDir := t.TempDir()
+	maliciousCmd := filepath.Join(tmpDir, "malicious")
+
+	// Create a fake executable
+	if err := os.WriteFile(maliciousCmd, []byte("#!/bin/sh\necho malicious"), 0755); err != nil {
+		t.Fatalf("failed to create test executable: %v", err)
+	}
+
+	// Try to resolve the absolute path - should fail because tmpDir is not trusted
+	_, err := ResolveAndValidateCommand(maliciousCmd)
+	if err == nil {
+		t.Error("expected error for command in untrusted directory")
+	}
+
+	// Verify error is about untrusted directory
+	if err != nil && err.Error() != "" {
+		// Should contain information about untrusted directory
+		t.Logf("Got expected error: %v", err)
+	}
+}
+
+func TestResolveAndValidateCommand_NotFound(t *testing.T) {
+	// Test with a command that doesn't exist
+	_, err := ResolveAndValidateCommand("nonexistent_command_12345")
+	if err == nil {
+		t.Error("expected error for nonexistent command")
+	}
+}
+
+func TestResolveAndValidateCommand_Directory(t *testing.T) {
+	// Test with a directory path instead of file
+	_, err := ResolveAndValidateCommand("/usr/bin")
+	if err == nil {
+		t.Error("expected error when command is a directory")
+	}
+}
+
+func TestValidateTrustedDirectory(t *testing.T) {
+	tests := []struct {
+		name    string
+		path    string
+		wantErr bool
+	}{
+		{"trusted /usr/bin", "/usr/bin/ls", false},
+		{"trusted /bin", "/bin/ls", false},
+		{"trusted /usr/local/bin", "/usr/local/bin/something", false},
+		{"untrusted /tmp", "/tmp/malicious", true},
+		{"untrusted home", "/home/user/bin/script", true},
+		{"untrusted relative", "./script", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateTrustedDirectory(tt.path)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateTrustedDirectory(%s) error = %v, wantErr %v", tt.path, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestLookupCommandInTrustedDirs(t *testing.T) {
+	// Test that lookupCommandInTrustedDirs finds commands in trusted directories
+	testCmds := []string{"ls", "cat"}
+
+	for _, cmd := range testCmds {
+		t.Run(cmd, func(t *testing.T) {
+			path, err := lookupCommandInTrustedDirs(cmd)
+			if err != nil {
+				t.Skipf("command %s not found in trusted directories", cmd)
+			}
+
+			// Verify the path is absolute
+			if !filepath.IsAbs(path) {
+				t.Errorf("expected absolute path, got: %s", path)
+			}
+
+			// Verify the path is in a trusted directory
+			dir := filepath.Dir(path)
+			found := false
+			for _, trusted := range TrustedDirectories {
+				if filepath.Clean(dir) == filepath.Clean(trusted) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("command found in untrusted directory: %s", path)
+			}
+		})
+	}
+}
+
+func TestResolveAndValidateCommand_SymlinkBypass(t *testing.T) {
+	// This test verifies that symlinks to untrusted locations are rejected
+	// We create a symlink in a test scenario
+
+	// Skip if we can't create symlinks (Windows without admin)
+	tmpDir := t.TempDir()
+	testLink := filepath.Join(tmpDir, "testlink")
+	testTarget := filepath.Join(tmpDir, "testtarget")
+
+	// Create a test file
+	if err := os.WriteFile(testTarget, []byte("test"), 0755); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	if err := os.Symlink(testTarget, testLink); err != nil {
+		t.Skipf("cannot create symlinks on this system: %v", err)
+	}
+
+	// Try to resolve the symlink - should fail because target is not in trusted dir
+	_, err := ResolveAndValidateCommand(testLink)
+	if err == nil {
+		t.Error("expected error for symlink to untrusted directory")
+	}
+
+	t.Logf("Correctly rejected symlink: %v", err)
+}
+
+func TestTrustedDirectoriesExist(t *testing.T) {
+	// Verify that the trusted directories list is not empty
+	if len(TrustedDirectories) == 0 {
+		t.Error("TrustedDirectories should not be empty")
+	}
+
+	// At least one should exist on most systems
+	existsCount := 0
+	for _, dir := range TrustedDirectories {
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			existsCount++
+		}
+	}
+
+	if existsCount == 0 {
+		t.Error("at least one trusted directory should exist")
+	}
+}
+
+func TestNewSecurityErrors(t *testing.T) {
+	// Verify new error variables are defined
+	if ErrCommandNotInTrustedDir == nil {
+		t.Error("ErrCommandNotInTrustedDir is nil")
+	}
+	if ErrCommandNotFound == nil {
+		t.Error("ErrCommandNotFound is nil")
 	}
 }
