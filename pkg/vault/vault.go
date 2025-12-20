@@ -1019,46 +1019,6 @@ func (v *Vault) DeleteSecret(key string) error {
 	return nil
 }
 
-// scanSecretEntryRow scans a row and returns a SecretEntry (without value).
-// This is a helper to avoid code duplication for list operations.
-func (v *Vault) scanSecretEntryRow(rows *sql.Rows) (*SecretEntry, error) {
-	var encryptedKey []byte
-	var tagsStr sql.NullString
-	var expiresAt sql.NullTime
-	var createdAt, updatedAt time.Time
-
-	if err := rows.Scan(&encryptedKey, &tagsStr, &expiresAt,
-		&createdAt, &updatedAt); err != nil {
-		return nil, fmt.Errorf("vault: failed to scan row: %w", err)
-	}
-
-	// Decrypt key name (nonce is prepended)
-	keyBytes, err := v.decryptWithNonce(encryptedKey)
-	if err != nil {
-		return nil, fmt.Errorf("vault: failed to decrypt key name: %w", err)
-	}
-
-	entry := &SecretEntry{
-		Key:       string(keyBytes),
-		CreatedAt: createdAt,
-		UpdatedAt: updatedAt,
-	}
-
-	// Parse tags from JSON
-	if tagsStr.Valid && tagsStr.String != "" {
-		var tags []string
-		if err := json.Unmarshal([]byte(tagsStr.String), &tags); err == nil {
-			entry.Tags = tags
-		}
-	}
-
-	if expiresAt.Valid {
-		entry.ExpiresAt = &expiresAt.Time
-	}
-
-	return entry, nil
-}
-
 // scanSecretEntryRowWithMetadata scans a row including metadata (but NOT secret value).
 // This decrypts key name and metadata, but never touches the secret value.
 // Use this for list operations that need metadata presence (HasNotes, HasURL).
