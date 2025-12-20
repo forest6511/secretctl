@@ -112,19 +112,11 @@ func (s *Server) handleSecretList(_ context.Context, _ *mcp.CallToolRequest, inp
 			return nil, SecretListOutput{}, fmt.Errorf("failed to list expiring secrets: %w", err)
 		}
 	default:
-		// List all secrets - need to get full entries for metadata
-		keys, listErr := s.vault.ListSecrets()
-		if listErr != nil {
-			return nil, SecretListOutput{}, fmt.Errorf("failed to list secrets: %w", listErr)
-		}
-		// Get metadata for each key
-		for _, key := range keys {
-			entry, getErr := s.vault.GetSecret(key)
-			if getErr != nil {
-				continue // Skip entries we can't read
-			}
-			entry.Key = key
-			entries = append(entries, entry)
+		// List all secrets with metadata but WITHOUT decrypting values
+		// This follows Option D+ principle: minimize plaintext exposure
+		entries, err = s.vault.ListSecretsWithMetadata()
+		if err != nil {
+			return nil, SecretListOutput{}, fmt.Errorf("failed to list secrets: %w", err)
 		}
 	}
 
