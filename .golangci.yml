@@ -32,6 +32,7 @@ linters:
     - nolintlint
     - revive
     - rowserrcheck
+    - sqlclosecheck
     - stylecheck
     - unconvert
     - unparam
@@ -64,6 +65,15 @@ linters-settings:
     local-prefixes: github.com/forest6511/secretctl
 
   gosec:
+    # Run all gosec rules except explicitly excluded ones
+    # This ensures comprehensive security coverage including:
+    # - G101-G107: Credential/input validation
+    # - G108-G115: HTTP security, overflow, decompression
+    # - G201-G204: SQL injection and command execution
+    # - G301-G307: File permission and path traversal
+    # - G401-G407: Cryptographic weaknesses
+    # - G501-G507: Blocklisted imports
+    # - G601-G602: Memory aliasing and bounds checking
     excludes:
       - G104 # Audit errors not checked (we handle errors appropriately)
     config:
