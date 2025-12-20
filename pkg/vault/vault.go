@@ -3,6 +3,7 @@
 package vault
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
@@ -587,10 +588,13 @@ func (v *Vault) createTables(db *sql.DB) error {
 	return nil
 }
 
-// hashKey computes SHA-256 hash of key name for lookup
-func hashKey(key string) string {
-	h := sha256.Sum256([]byte(key))
-	return hex.EncodeToString(h[:])
+// hashKey computes HMAC-SHA256 of key name for secure lookup.
+// Uses DEK as the HMAC key to prevent offline brute-force attacks on key names.
+// An attacker with database access cannot dictionary-attack key names without the DEK.
+func (v *Vault) hashKey(key string) string {
+	mac := hmac.New(sha256.New, v.dek)
+	mac.Write([]byte(key))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 // encryptWithNonce encrypts data and prepends the nonce to the ciphertext.
@@ -767,8 +771,8 @@ func (v *Vault) SetSecret(key string, entry *SecretEntry) error {
 		return err
 	}
 
-	// Compute key hash for lookup
-	keyHash := hashKey(key)
+	// Compute key hash for lookup (HMAC-SHA256 with DEK)
+	keyHash := v.hashKey(key)
 
 	// Encrypt key name (nonce prepended)
 	encryptedKey, err := v.encryptWithNonce([]byte(key))
@@ -857,8 +861,8 @@ func (v *Vault) GetSecret(key string) (*SecretEntry, error) {
 		return nil, ErrVaultLocked
 	}
 
-	// Compute key hash
-	keyHash := hashKey(key)
+	// Compute key hash (HMAC-SHA256 with DEK)
+	keyHash := v.hashKey(key)
 
 	// Get all fields from database
 	var encryptedValue, encryptedMetadata []byte
@@ -978,8 +982,8 @@ func (v *Vault) DeleteSecret(key string) error {
 		return ErrVaultLocked
 	}
 
-	// Compute key hash
-	keyHash := hashKey(key)
+	// Compute key hash (HMAC-SHA256 with DEK)
+	keyHash := v.hashKey(key)
 
 	// Begin transaction
 	tx, err := v.db.Begin()
