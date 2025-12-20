@@ -400,7 +400,7 @@ func TestOutputSanitizerEncodedForms(t *testing.T) {
 		},
 		{
 			name:     "base64 encoded (padded)",
-			input:    "encoded=cGFzc3dvcmQ=", // base64("password")
+			input:    "encoded=cGFzc3dvcmQ=", // "password" in base64
 			expected: "encoded=[REDACTED:SECRET]",
 		},
 		{
@@ -410,7 +410,7 @@ func TestOutputSanitizerEncodedForms(t *testing.T) {
 		},
 		{
 			name:     "hex lowercase",
-			input:    "hex=70617373776f7264", // hex("password")
+			input:    "hex=70617373776f7264", // "password" in hex
 			expected: "hex=[REDACTED:SECRET]",
 		},
 		{
@@ -459,12 +459,12 @@ func TestOutputSanitizerURLEncoded(t *testing.T) {
 		},
 		{
 			name:     "QueryEscape (space as +)",
-			input:    "p=pass+word%21", // url.QueryEscape("pass word!")
+			input:    "p=pass+word%21", // space becomes + in query encoding
 			expected: "p=[REDACTED:PASS]",
 		},
 		{
 			name:     "PathEscape (space as %20)",
-			input:    "p=pass%20word%21", // url.PathEscape("pass word!")
+			input:    "p=pass%20word%21", // space becomes %20 in path encoding
 			expected: "p=[REDACTED:PASS]",
 		},
 		{

@@ -703,8 +703,8 @@ func newOutputSanitizer(secrets []secretData) *outputSanitizer {
 		addReplacement([]byte(base64.RawURLEncoding.EncodeToString(secret.value)), placeholder)
 
 		// URL-encoded forms
-		addReplacement([]byte(url.QueryEscape(string(secret.value))), placeholder)   // space as +
-		addReplacement([]byte(url.PathEscape(string(secret.value))), placeholder)    // space as %20
+		addReplacement([]byte(url.QueryEscape(string(secret.value))), placeholder)    // space as +
+		addReplacement([]byte(url.PathEscape(string(secret.value))), placeholder)     // space as %20
 		addReplacement([]byte(percentEncodeLower(string(secret.value))), placeholder) // lowercase %xx
 
 		// Hex-encoded forms (plain)
