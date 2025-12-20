@@ -291,13 +291,18 @@ func (v *Vault) Init(masterPassword string) error {
 	}
 
 	// 2. Derive KEK using crypto.DeriveKey
-	kek := crypto.DeriveKey([]byte(masterPassword), salt)
+	// Convert password to []byte and wipe after use to minimize memory exposure
+	passwordBytes := []byte(masterPassword)
+	defer crypto.SecureWipe(passwordBytes)
+	kek := crypto.DeriveKey(passwordBytes, salt)
+	defer crypto.SecureWipe(kek) // Wipe KEK when done
 
 	// 3. Generate DEK (32 bytes)
 	dek := make([]byte, DEKLength)
 	if _, err := rand.Read(dek); err != nil {
 		return fmt.Errorf("vault: failed to generate DEK: %w", err)
 	}
+	defer crypto.SecureWipe(dek) // Wipe DEK when Init completes (vault is not unlocked)
 
 	// 4. Encrypt DEK using crypto.Encrypt
 	encryptedDEK, nonce, err := crypto.Encrypt(kek, dek)
@@ -428,7 +433,11 @@ func (v *Vault) Unlock(masterPassword string) error {
 	}
 
 	// 2. Derive KEK
-	kek := crypto.DeriveKey([]byte(masterPassword), salt)
+	// Convert password to []byte and wipe after use to minimize memory exposure
+	passwordBytes := []byte(masterPassword)
+	defer crypto.SecureWipe(passwordBytes)
+	kek := crypto.DeriveKey(passwordBytes, salt)
+	defer crypto.SecureWipe(kek) // Wipe KEK after decrypting DEK
 
 	// 3. Read encrypted DEK and nonce from database
 	dbPath := filepath.Join(v.path, DBFileName)
@@ -513,6 +522,9 @@ func (v *Vault) Lock() {
 		crypto.SecureWipe(v.dek)
 		v.dek = nil
 	}
+
+	// Clear audit logger HMAC key to minimize sensitive material lifetime
+	v.audit.ClearHMACKey()
 
 	// Close database connection
 	if v.db != nil {
