@@ -1,0 +1,53 @@
+# Codecov configuration for secretctl
+# See: https://docs.codecov.com/docs/codecov-yaml
+
+coverage:
+  status:
+    # Overall project coverage threshold
+    project:
+      default:
+        target: 70%
+        threshold: 2%
+        informational: false
+      # Critical package: crypto (informational until coverage improves)
+      crypto:
+        paths:
+          - "pkg/crypto/**"
+        target: 80%
+        threshold: 2%
+        informational: true
+      # Critical package: vault (informational until coverage improves)
+      vault:
+        paths:
+          - "pkg/vault/**"
+        target: 80%
+        threshold: 2%
+        informational: true
+    # Coverage for new code in PRs
+    patch:
+      default:
+        target: 70%
+        threshold: 1%
+        informational: false
+
+# Ignore generated files and test files
+ignore:
+  - "**/*_test.go"
+  - "**/mock_*.go"
+  - "**/mocks/**"
+  - "desktop/frontend/**"
+
+# Comment configuration for PRs
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
+  require_changes: true
+  require_base: false
+  require_head: true
+
+# Flags for different test types
+flags:
+  unittests:
+    paths:
+      - "pkg/**"
+    carryforward: true

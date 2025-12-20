@@ -7,6 +7,7 @@ No infrastructure. No subscription. No complexity.
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Documentation](https://img.shields.io/badge/docs-website-blue)](https://forest6511.github.io/secretctl/)
+[![Codecov](https://codecov.io/gh/forest6511/secretctl/branch/main/graph/badge.svg)](https://codecov.io/gh/forest6511/secretctl)
 
 ---
 
