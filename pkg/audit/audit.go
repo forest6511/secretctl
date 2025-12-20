@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -175,6 +176,23 @@ func (l *Logger) SetHMACKey(masterKey []byte) error {
 	}
 
 	return nil
+}
+
+// ClearHMACKey securely wipes the HMAC key from memory.
+// This should be called when locking the vault to minimize sensitive material lifetime.
+func (l *Logger) ClearHMACKey() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.hmacKey != nil {
+		// Securely wipe the key bytes
+		for i := range l.hmacKey {
+			l.hmacKey[i] = 0
+		}
+		runtime.KeepAlive(l.hmacKey)
+		l.hmacKey = nil
+	}
+	l.hmacKeySet = false
 }
 
 // Log records an audit event

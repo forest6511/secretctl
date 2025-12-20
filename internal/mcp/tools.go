@@ -3,17 +3,22 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/forest6511/secretctl/pkg/audit"
 	"github.com/forest6511/secretctl/pkg/vault"
 )
 
@@ -99,32 +104,28 @@ func (s *Server) handleSecretList(_ context.Context, _ *mcp.CallToolRequest, inp
 		// Filter by tag
 		entries, err = s.vault.ListSecretsByTag(input.Tag)
 		if err != nil {
+			_ = s.vault.Audit().LogError(audit.OpSecretList, audit.SourceMCP, "", "LIST_FAILED", err.Error())
 			return nil, SecretListOutput{}, fmt.Errorf("failed to list secrets by tag: %w", err)
 		}
 	case input.ExpiringWithin != "":
 		// Filter by expiration
 		duration, parseErr := parseDuration(input.ExpiringWithin)
 		if parseErr != nil {
+			_ = s.vault.Audit().LogError(audit.OpSecretList, audit.SourceMCP, "", "INVALID_DURATION", parseErr.Error())
 			return nil, SecretListOutput{}, fmt.Errorf("invalid expiring_within format: %w", parseErr)
 		}
 		entries, err = s.vault.ListExpiringSecrets(duration)
 		if err != nil {
+			_ = s.vault.Audit().LogError(audit.OpSecretList, audit.SourceMCP, "", "LIST_FAILED", err.Error())
 			return nil, SecretListOutput{}, fmt.Errorf("failed to list expiring secrets: %w", err)
 		}
 	default:
-		// List all secrets - need to get full entries for metadata
-		keys, listErr := s.vault.ListSecrets()
-		if listErr != nil {
-			return nil, SecretListOutput{}, fmt.Errorf("failed to list secrets: %w", listErr)
-		}
-		// Get metadata for each key
-		for _, key := range keys {
-			entry, getErr := s.vault.GetSecret(key)
-			if getErr != nil {
-				continue // Skip entries we can't read
-			}
-			entry.Key = key
-			entries = append(entries, entry)
+		// List all secrets with metadata but WITHOUT decrypting values
+		// This follows Option D+ principle: minimize plaintext exposure
+		entries, err = s.vault.ListSecretsWithMetadata()
+		if err != nil {
+			_ = s.vault.Audit().LogError(audit.OpSecretList, audit.SourceMCP, "", "LIST_FAILED", err.Error())
+			return nil, SecretListOutput{}, fmt.Errorf("failed to list secrets: %w", err)
 		}
 	}
 
@@ -148,23 +149,30 @@ func (s *Server) handleSecretList(_ context.Context, _ *mcp.CallToolRequest, inp
 		output.Secrets = append(output.Secrets, info)
 	}
 
+	// Log successful list operation
+	_ = s.vault.Audit().LogSuccess(audit.OpSecretList, audit.SourceMCP, "")
+
 	return nil, output, nil
 }
 
 // handleSecretExists handles the secret_exists tool call.
 func (s *Server) handleSecretExists(_ context.Context, _ *mcp.CallToolRequest, input SecretExistsInput) (*mcp.CallToolResult, SecretExistsOutput, error) {
 	if input.Key == "" {
+		_ = s.vault.Audit().LogError(audit.OpSecretExists, audit.SourceMCP, "", "INVALID_INPUT", "key is required")
 		return nil, SecretExistsOutput{}, errors.New("key is required")
 	}
 
 	entry, err := s.vault.GetSecret(input.Key)
 	if err != nil {
 		if errors.Is(err, vault.ErrSecretNotFound) {
+			// Log successful check (key doesn't exist is a valid result)
+			_ = s.vault.Audit().LogSuccess(audit.OpSecretExists, audit.SourceMCP, input.Key)
 			return nil, SecretExistsOutput{
 				Exists: false,
 				Key:    input.Key,
 			}, nil
 		}
+		_ = s.vault.Audit().LogError(audit.OpSecretExists, audit.SourceMCP, input.Key, "GET_FAILED", err.Error())
 		return nil, SecretExistsOutput{}, fmt.Errorf("failed to get secret: %w", err)
 	}
 
@@ -181,22 +189,30 @@ func (s *Server) handleSecretExists(_ context.Context, _ *mcp.CallToolRequest, i
 		output.ExpiresAt = entry.ExpiresAt.Format(time.RFC3339)
 	}
 
+	// Log successful exists check
+	_ = s.vault.Audit().LogSuccess(audit.OpSecretExists, audit.SourceMCP, input.Key)
+
 	return nil, output, nil
 }
 
 // handleSecretGetMasked handles the secret_get_masked tool call.
 func (s *Server) handleSecretGetMasked(_ context.Context, _ *mcp.CallToolRequest, input SecretGetMaskedInput) (*mcp.CallToolResult, SecretGetMaskedOutput, error) {
 	if input.Key == "" {
+		_ = s.vault.Audit().LogError(audit.OpSecretGetMasked, audit.SourceMCP, "", "INVALID_INPUT", "key is required")
 		return nil, SecretGetMaskedOutput{}, errors.New("key is required")
 	}
 
 	entry, err := s.vault.GetSecret(input.Key)
 	if err != nil {
+		_ = s.vault.Audit().LogError(audit.OpSecretGetMasked, audit.SourceMCP, input.Key, "GET_FAILED", err.Error())
 		return nil, SecretGetMaskedOutput{}, fmt.Errorf("failed to get secret: %w", err)
 	}
 
 	// Mask the value per mcp-design-ja.md §3.3
 	masked := maskValue(entry.Value)
+
+	// Log successful masked get
+	_ = s.vault.Audit().LogSuccess(audit.OpSecretGetMasked, audit.SourceMCP, input.Key)
 
 	return nil, SecretGetMaskedOutput{
 		Key:         input.Key,
@@ -236,35 +252,57 @@ func (s *Server) handleSecretRun(ctx context.Context, _ *mcp.CallToolRequest, in
 	case s.runSem <- struct{}{}:
 		defer func() { <-s.runSem }()
 	default:
+		_ = s.vault.Audit().LogError(audit.OpSecretRun, audit.SourceMCP, "", "RATE_LIMITED", "too many concurrent operations")
 		return nil, SecretRunOutput{}, errors.New("too many concurrent secret_run operations (max 5)")
 	}
 
 	// Validate required fields
 	if len(input.Keys) == 0 {
+		_ = s.vault.Audit().LogError(audit.OpSecretRun, audit.SourceMCP, "", "INVALID_INPUT", "keys is required")
 		return nil, SecretRunOutput{}, errors.New("keys is required")
 	}
 	if input.Command == "" {
+		_ = s.vault.Audit().LogError(audit.OpSecretRun, audit.SourceMCP, "", "INVALID_INPUT", "command is required")
 		return nil, SecretRunOutput{}, errors.New("command is required")
 	}
 
 	// Validate limits per mcp-design-ja.md §6.4
 	if len(input.Keys) > 10 {
+		_ = s.vault.Audit().LogError(audit.OpSecretRun, audit.SourceMCP, "", "INVALID_INPUT", "too many keys")
 		return nil, SecretRunOutput{}, errors.New("too many keys (max 10)")
 	}
 	if len(input.Command) > 4096 {
+		_ = s.vault.Audit().LogError(audit.OpSecretRun, audit.SourceMCP, "", "INVALID_INPUT", "command too long")
 		return nil, SecretRunOutput{}, errors.New("command too long (max 4096)")
 	}
 	if len(input.Args) > 100 {
+		_ = s.vault.Audit().LogError(audit.OpSecretRun, audit.SourceMCP, "", "INVALID_INPUT", "too many args")
 		return nil, SecretRunOutput{}, errors.New("too many args (max 100)")
 	}
 
 	// Check policy
 	if s.policy == nil {
+		_ = s.vault.Audit().LogDenied(audit.OpSecretRunDenied, audit.SourceMCP, "", "NO_POLICY")
 		return nil, SecretRunOutput{}, errors.New("MCP policy not configured. Create ~/.secretctl/mcp-policy.yaml to enable secret_run")
 	}
 
+	// SECURITY: Resolve command path BEFORE policy check to prevent PATH manipulation attacks.
+	// This ensures we check the policy against the actual binary that will be executed,
+	// not just the command name which could be spoofed via PATH.
+	resolvedCmd, err := ResolveAndValidateCommand(input.Command)
+	if err != nil {
+		return nil, SecretRunOutput{}, fmt.Errorf("command validation failed: %w", err)
+	}
+
+	// Check policy against BOTH the original command name and the resolved path
+	// This allows policies to specify either "curl" or "/usr/bin/curl"
 	allowed, reason := s.policy.IsCommandAllowed(input.Command)
 	if !allowed {
+		// Also try with the resolved path in case policy uses absolute paths
+		allowed, reason = s.policy.IsCommandAllowed(resolvedCmd)
+	}
+	if !allowed {
+		_ = s.vault.Audit().LogDenied(audit.OpSecretRunDenied, audit.SourceMCP, input.Command, reason)
 		return nil, SecretRunOutput{}, fmt.Errorf("command not allowed by policy: %s", reason)
 	}
 
@@ -273,6 +311,7 @@ func (s *Server) handleSecretRun(ctx context.Context, _ *mcp.CallToolRequest, in
 	if input.Env != "" {
 		resolvedKeys, err := s.policy.ResolveAliasKeys(input.Env, input.Keys)
 		if err != nil {
+			_ = s.vault.Audit().LogError(audit.OpSecretRun, audit.SourceMCP, "", "ALIAS_FAILED", err.Error())
 			return nil, SecretRunOutput{}, fmt.Errorf("failed to resolve environment alias '%s': %w", input.Env, err)
 		}
 		keys = resolvedKeys
@@ -287,6 +326,7 @@ func (s *Server) handleSecretRun(ctx context.Context, _ *mcp.CallToolRequest, in
 			// Try our custom duration parser
 			timeout, err = parseDuration(input.Timeout)
 			if err != nil {
+				_ = s.vault.Audit().LogError(audit.OpSecretRun, audit.SourceMCP, "", "INVALID_TIMEOUT", err.Error())
 				return nil, SecretRunOutput{}, fmt.Errorf("invalid timeout format: %w", err)
 			}
 		}
@@ -299,6 +339,7 @@ func (s *Server) handleSecretRun(ctx context.Context, _ *mcp.CallToolRequest, in
 	// Collect secrets (using resolved keys if env alias was applied)
 	secrets, err := s.collectSecrets(keys)
 	if err != nil {
+		_ = s.vault.Audit().LogError(audit.OpSecretRun, audit.SourceMCP, "", "SECRET_COLLECT_FAILED", err.Error())
 		return nil, SecretRunOutput{}, err
 	}
 	defer wipeSecrets(secrets)
@@ -306,18 +347,23 @@ func (s *Server) handleSecretRun(ctx context.Context, _ *mcp.CallToolRequest, in
 	// Build environment
 	env, err := s.buildEnvironment(secrets, input.EnvPrefix)
 	if err != nil {
+		_ = s.vault.Audit().LogError(audit.OpSecretRun, audit.SourceMCP, "", "ENV_BUILD_FAILED", err.Error())
 		return nil, SecretRunOutput{}, err
 	}
 
-	// Execute command
+	// Execute command using the pre-resolved and validated path
 	startTime := time.Now()
-	result, err := s.executeCommand(ctx, input.Command, input.Args, env, secrets, timeout)
+	result, err := s.executeCommand(ctx, resolvedCmd, input.Args, env, secrets, timeout)
 	if err != nil {
+		_ = s.vault.Audit().LogError(audit.OpSecretRun, audit.SourceMCP, input.Command, "EXEC_FAILED", err.Error())
 		return nil, SecretRunOutput{}, err
 	}
 
 	result.DurationMs = time.Since(startTime).Milliseconds()
 	result.Sanitized = true
+
+	// Log successful command execution
+	_ = s.vault.Audit().LogSuccess(audit.OpSecretRun, audit.SourceMCP, input.Command)
 
 	return nil, *result, nil
 }
@@ -530,7 +576,10 @@ func validateEnvName(name string) error {
 	return nil
 }
 
-// executeCommand runs the command with secrets in environment
+// executeCommand runs the command with secrets in environment.
+// IMPORTANT: The command parameter MUST be an absolute path that has already been
+// resolved and validated by ResolveAndValidateCommand. This function does NOT
+// perform path lookup to prevent PATH manipulation attacks.
 func (s *Server) executeCommand(ctx context.Context, command string, args []string, env []string, secrets []secretData, timeout time.Duration) (*SecretRunOutput, error) {
 	// Validate command path per §6.3.4
 	if err := validateCommand(command); err != nil {
@@ -542,18 +591,19 @@ func (s *Server) executeCommand(ctx context.Context, command string, args []stri
 		return nil, err
 	}
 
+	// Verify command is an absolute path (security check - should always be true
+	// since we require pre-resolution via ResolveAndValidateCommand)
+	if !filepath.IsAbs(command) {
+		return nil, fmt.Errorf("security error: command must be an absolute path, got: %s", command)
+	}
+
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	// Look up command
-	cmdPath, err := exec.LookPath(command)
-	if err != nil {
-		return nil, fmt.Errorf("command not found: %s", command)
-	}
-
-	// Create command - NO shell (shell=false per §6.3.1)
-	cmd := exec.CommandContext(ctx, cmdPath, args...)
+	// Create command directly with the pre-resolved absolute path
+	// NO LookPath here - the path was already resolved and validated
+	cmd := exec.CommandContext(ctx, command, args...)
 	cmd.Env = env
 
 	// Capture output
@@ -562,7 +612,7 @@ func (s *Server) executeCommand(ctx context.Context, command string, args []stri
 	cmd.Stderr = &stderr
 
 	// Execute
-	err = cmd.Run()
+	err := cmd.Run()
 
 	// Sanitize output
 	sanitizer := newOutputSanitizer(secrets)
@@ -627,7 +677,8 @@ func validateArgs(args []string) error {
 	return nil
 }
 
-// outputSanitizer sanitizes output by replacing secret values
+// outputSanitizer sanitizes output by replacing secret values and their encoded forms.
+// This prevents secrets from leaking through MCP output in any form.
 type outputSanitizer struct {
 	replacements []secretReplacement
 }
@@ -637,18 +688,83 @@ type secretReplacement struct {
 	placeholder []byte
 }
 
+// newOutputSanitizer creates a sanitizer that will redact:
+// - The raw secret value (all lengths, not just >= 4 bytes)
+// - Base64-encoded forms (padded and raw/unpadded, standard and URL-safe)
+// - URL-encoded forms (QueryEscape and PathEscape styles)
+// - Hex-encoded forms (uppercase and lowercase, with and without 0x prefix)
 func newOutputSanitizer(secrets []secretData) *outputSanitizer {
+	// Use a map to deduplicate encoded forms
+	seen := make(map[string]bool)
 	var replacements []secretReplacement
-	for _, secret := range secrets {
-		// Only sanitize values >= 4 bytes per design
-		if len(secret.value) >= 4 {
-			replacements = append(replacements, secretReplacement{
-				secret:      secret.value,
-				placeholder: []byte(fmt.Sprintf("[REDACTED:%s]", keyToEnvName(secret.key))),
-			})
+
+	addReplacement := func(secret []byte, placeholder []byte) {
+		key := string(secret)
+		if seen[key] || len(secret) == 0 {
+			return
 		}
+		seen[key] = true
+		replacements = append(replacements, secretReplacement{
+			secret:      secret,
+			placeholder: placeholder,
+		})
 	}
+
+	for _, secret := range secrets {
+		placeholder := []byte(fmt.Sprintf("[REDACTED:%s]", keyToEnvName(secret.key)))
+
+		// Always add the raw value replacement, regardless of length
+		// Short secrets are security-critical too (e.g., PIN codes, short API keys)
+		addReplacement(secret.value, placeholder)
+
+		// Only generate encoded forms for secrets with content
+		if len(secret.value) == 0 {
+			continue
+		}
+
+		// Base64-encoded forms (padded)
+		addReplacement([]byte(base64.StdEncoding.EncodeToString(secret.value)), placeholder)
+		addReplacement([]byte(base64.URLEncoding.EncodeToString(secret.value)), placeholder)
+
+		// Base64-encoded forms (raw/unpadded) - catches JWT segments, etc.
+		addReplacement([]byte(base64.RawStdEncoding.EncodeToString(secret.value)), placeholder)
+		addReplacement([]byte(base64.RawURLEncoding.EncodeToString(secret.value)), placeholder)
+
+		// URL-encoded forms
+		addReplacement([]byte(url.QueryEscape(string(secret.value))), placeholder)    // space as +
+		addReplacement([]byte(url.PathEscape(string(secret.value))), placeholder)     // space as %20
+		addReplacement([]byte(percentEncodeLower(string(secret.value))), placeholder) // lowercase %xx
+
+		// Hex-encoded forms (plain)
+		hexLower := hex.EncodeToString(secret.value)
+		hexUpper := strings.ToUpper(hexLower)
+		addReplacement([]byte(hexLower), placeholder)
+		addReplacement([]byte(hexUpper), placeholder)
+
+		// Hex-encoded forms with 0x prefix (common in debug output)
+		addReplacement([]byte("0x"+hexLower), placeholder)
+		addReplacement([]byte("0X"+hexUpper), placeholder)
+	}
+
+	// Sort replacements by length (longest first) to avoid partial replacements
+	// e.g., if we have "secret" and "secretkey", replace "secretkey" first
+	sortReplacementsByLength(replacements)
+
 	return &outputSanitizer{replacements: replacements}
+}
+
+// percentEncodeLower generates URL encoding with lowercase hex digits
+// (some systems output %2f instead of %2F)
+func percentEncodeLower(s string) string {
+	return strings.ToLower(url.QueryEscape(s))
+}
+
+// sortReplacementsByLength sorts replacements by secret length in descending order.
+// This ensures longer matches are replaced first, preventing partial replacement issues.
+func sortReplacementsByLength(replacements []secretReplacement) {
+	sort.Slice(replacements, func(i, j int) bool {
+		return len(replacements[i].secret) > len(replacements[j].secret)
+	})
 }
 
 func (s *outputSanitizer) sanitize(data []byte) []byte {

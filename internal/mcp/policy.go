@@ -50,6 +50,24 @@ var ErrPolicyNotOwnedByUser = errors.New("MCP policy file not owned by current u
 // ErrEnvNotFound is returned when the specified environment alias is not found
 var ErrEnvNotFound = errors.New("environment alias not found")
 
+// ErrCommandNotInTrustedDir is returned when command is not in a trusted directory
+var ErrCommandNotInTrustedDir = errors.New("command not in trusted directory")
+
+// ErrCommandNotFound is returned when command cannot be found
+var ErrCommandNotFound = errors.New("command not found")
+
+// TrustedDirectories are the only directories from which commands can be executed.
+// This prevents PATH manipulation attacks where a malicious binary is placed
+// earlier in PATH to bypass the allowlist.
+var TrustedDirectories = []string{
+	"/usr/bin",
+	"/bin",
+	"/usr/sbin",
+	"/sbin",
+	"/usr/local/bin",
+	"/opt/homebrew/bin", // macOS Homebrew
+}
+
 // LoadPolicy loads the MCP policy from the vault directory.
 // Implements TOCTOU-safe loading per mcp-design-ja.md §4.5.2
 func LoadPolicy(vaultPath string) (*Policy, error) {
@@ -149,15 +167,144 @@ func (p *Policy) IsCommandAllowed(command string) (allowed bool, reason string) 
 }
 
 // matchCommand checks if a command matches a pattern.
-// For simplicity, this uses exact match on the command name (base path).
-// Future: could support glob patterns.
+// Security behavior:
+// - If pattern is an absolute path (e.g., "/usr/bin/curl"), require exact match
+// - If pattern contains spaces (e.g., "cat /proc/*/environ"), require exact match
+// - If pattern is just a command name (e.g., "curl"), match against basename
+// This prevents a policy entry like "/usr/bin/aws" from allowing any "aws" binary.
 func matchCommand(command, pattern string) bool {
-	// Extract base command name
-	cmdBase := filepath.Base(command)
-	patternBase := filepath.Base(pattern)
+	// If pattern is an absolute path, require exact match
+	// This ensures "/usr/bin/aws" in policy only allows that exact binary
+	if filepath.IsAbs(pattern) {
+		// Clean both paths for comparison
+		return filepath.Clean(command) == filepath.Clean(pattern)
+	}
 
-	// Exact match
-	return cmdBase == patternBase || command == pattern
+	// If pattern contains spaces (command line with args), require exact match
+	// This handles patterns like "cat /proc/*/environ" in DefaultDeniedCommands
+	if containsSpace(pattern) {
+		return command == pattern
+	}
+
+	// Pattern is a bare command name - match against basename
+	cmdBase := filepath.Base(command)
+	return cmdBase == pattern
+}
+
+// containsSpace checks if a string contains any whitespace
+func containsSpace(s string) bool {
+	for _, c := range s {
+		if c == ' ' || c == '\t' {
+			return true
+		}
+	}
+	return false
+}
+
+// ResolveAndValidateCommand resolves a command name to its full path and validates
+// that it is in a trusted directory. This prevents PATH manipulation attacks.
+//
+// Security: This function MUST be called BEFORE IsCommandAllowed to ensure
+// that we check the policy against the actual binary that will be executed.
+//
+// Returns the resolved absolute path of the command, or an error if:
+// - The command cannot be found
+// - The command is not in a trusted directory
+// - The command resolves through symlinks to an untrusted location
+func ResolveAndValidateCommand(command string) (string, error) {
+	var cmdPath string
+
+	if filepath.IsAbs(command) {
+		// Absolute path provided - use it directly
+		cmdPath = command
+	} else {
+		// Search for command in trusted directories only
+		// NOTE: We do NOT modify the global PATH to avoid race conditions
+		var err error
+		cmdPath, err = lookupCommandInTrustedDirs(command)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	// Verify the file exists, is not a directory, and is executable
+	info, err := os.Stat(cmdPath)
+	if err != nil {
+		return "", fmt.Errorf("%w: %s", ErrCommandNotFound, cmdPath)
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("%w: %s is a directory", ErrCommandNotFound, cmdPath)
+	}
+	// Check if executable (at least one execute bit set)
+	if info.Mode()&0111 == 0 {
+		return "", fmt.Errorf("%w: %s is not executable", ErrCommandNotFound, cmdPath)
+	}
+
+	// CRITICAL: Resolve symlinks to get the real path
+	// This prevents symlink bypass attacks where a symlink in a trusted dir
+	// points to a malicious binary in an untrusted location
+	realPath, err := filepath.EvalSymlinks(cmdPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve symlinks for %s: %w", cmdPath, err)
+	}
+
+	// Validate that the REAL path (after symlink resolution) is in a trusted directory
+	if err := validateTrustedDirectory(realPath); err != nil {
+		return "", fmt.Errorf("symlink target not in trusted directory: %w", err)
+	}
+
+	// Return the real path to ensure we execute the actual validated binary
+	return realPath, nil
+}
+
+// lookupCommandInTrustedDirs searches for a command in trusted directories only.
+// This is a thread-safe alternative to modifying the global PATH.
+func lookupCommandInTrustedDirs(command string) (string, error) {
+	for _, dir := range TrustedDirectories {
+		// Check if the directory exists
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			continue
+		}
+
+		cmdPath := filepath.Join(dir, command)
+
+		// Check if the file exists and is executable
+		info, err := os.Stat(cmdPath)
+		if err != nil {
+			continue
+		}
+
+		// Skip directories
+		if info.IsDir() {
+			continue
+		}
+
+		// Check if executable (on Unix-like systems)
+		if info.Mode()&0111 != 0 {
+			return cmdPath, nil
+		}
+	}
+
+	return "", fmt.Errorf("%w: %s", ErrCommandNotFound, command)
+}
+
+// validateTrustedDirectory checks if the command path is within a trusted directory
+func validateTrustedDirectory(cmdPath string) error {
+	// Get the directory containing the command
+	cmdDir := filepath.Dir(cmdPath)
+
+	// Clean the path to normalize it
+	cmdDir = filepath.Clean(cmdDir)
+
+	// Check if the directory is in our trusted list
+	for _, trusted := range TrustedDirectories {
+		trustedClean := filepath.Clean(trusted)
+		if cmdDir == trustedClean {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("%w: %s (allowed: %v)", ErrCommandNotInTrustedDir, cmdPath, TrustedDirectories)
 }
 
 // ValidatePolicy validates the policy configuration
