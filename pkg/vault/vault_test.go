@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestNew(t *testing.T) {
@@ -1444,5 +1445,259 @@ func TestPasswordStrengthString(t *testing.T) {
 				t.Errorf("String(): expected %q, got %q", tt.expected, got)
 			}
 		})
+	}
+}
+
+// TestListSecretsByTag tests listing secrets by tag
+func TestListSecretsByTag(t *testing.T) {
+	tmpDir := t.TempDir()
+	v := New(tmpDir)
+
+	if err := v.Init("testpassword123"); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := v.Unlock("testpassword123"); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+
+	// Create secrets with different tags
+	entries := []struct {
+		key  string
+		tags []string
+	}{
+		{"aws/api-key", []string{"production", "aws"}},
+		{"aws/secret", []string{"production", "aws"}},
+		{"dev/api-key", []string{"development", "aws"}},
+		{"gcp/key", []string{"production", "gcp"}},
+		{"no-tags", nil},
+	}
+
+	for _, e := range entries {
+		err := v.SetSecret(e.key, &SecretEntry{
+			Key:   e.key,
+			Value: []byte("secret-value"),
+			Tags:  e.tags,
+		})
+		if err != nil {
+			t.Fatalf("SetSecret(%s) failed: %v", e.key, err)
+		}
+	}
+
+	tests := []struct {
+		tag      string
+		expected int
+	}{
+		{"production", 3},
+		{"aws", 3},
+		{"development", 1},
+		{"gcp", 1},
+		{"nonexistent", 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.tag, func(t *testing.T) {
+			results, err := v.ListSecretsByTag(tt.tag)
+			if err != nil {
+				t.Fatalf("ListSecretsByTag(%s) failed: %v", tt.tag, err)
+			}
+			if len(results) != tt.expected {
+				t.Errorf("ListSecretsByTag(%s) returned %d results, want %d",
+					tt.tag, len(results), tt.expected)
+			}
+
+			// Verify that values are NOT populated (security requirement)
+			for _, entry := range results {
+				if len(entry.Value) != 0 {
+					t.Errorf("entry %q has Value populated (security violation!)", entry.Key)
+				}
+			}
+		})
+	}
+}
+
+// TestListExpiringSecrets tests listing secrets that will expire
+func TestListExpiringSecrets(t *testing.T) {
+	tmpDir := t.TempDir()
+	v := New(tmpDir)
+
+	if err := v.Init("testpassword123"); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := v.Unlock("testpassword123"); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+
+	now := time.Now()
+
+	// Create secrets with different expiry times
+	entries := []struct {
+		key       string
+		expiresAt *time.Time
+	}{
+		{"expires-soon", func() *time.Time { t := now.Add(7 * 24 * time.Hour); return &t }()},       // 7 days
+		{"expires-later", func() *time.Time { t := now.Add(60 * 24 * time.Hour); return &t }()},    // 60 days
+		{"expires-very-soon", func() *time.Time { t := now.Add(1 * 24 * time.Hour); return &t }()}, // 1 day
+		{"no-expiry", nil},
+	}
+
+	for _, e := range entries {
+		err := v.SetSecret(e.key, &SecretEntry{
+			Key:       e.key,
+			Value:     []byte("secret-value"),
+			ExpiresAt: e.expiresAt,
+		})
+		if err != nil {
+			t.Fatalf("SetSecret(%s) failed: %v", e.key, err)
+		}
+	}
+
+	tests := []struct {
+		name     string
+		days     time.Duration
+		expected int
+	}{
+		{"within 30 days", 30 * 24 * time.Hour, 2}, // expires-soon (7d) and expires-very-soon (1d)
+		{"within 10 days", 10 * 24 * time.Hour, 2}, // expires-soon (7d) and expires-very-soon (1d)
+		{"within 2 days", 2 * 24 * time.Hour, 1},   // expires-very-soon (1d)
+		{"within 90 days", 90 * 24 * time.Hour, 3}, // all 3 with expiry
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results, err := v.ListExpiringSecrets(tt.days)
+			if err != nil {
+				t.Fatalf("ListExpiringSecrets failed: %v", err)
+			}
+			if len(results) != tt.expected {
+				t.Errorf("ListExpiringSecrets(%v) returned %d results, want %d",
+					tt.days, len(results), tt.expected)
+			}
+
+			// Verify that values are NOT populated (security requirement)
+			for _, entry := range results {
+				if len(entry.Value) != 0 {
+					t.Errorf("entry %q has Value populated (security violation!)", entry.Key)
+				}
+			}
+		})
+	}
+}
+
+// TestAuditVerify tests audit log verification
+func TestAuditVerify(t *testing.T) {
+	tmpDir := t.TempDir()
+	v := New(tmpDir)
+
+	if err := v.Init("testpassword123"); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := v.Unlock("testpassword123"); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+
+	// Perform some operations to generate audit entries
+	for i := 0; i < 5; i++ {
+		key := "test-key-" + string(rune('a'+i))
+		if err := v.SetSecret(key, &SecretEntry{
+			Key:   key,
+			Value: []byte("secret-value"),
+		}); err != nil {
+			t.Fatalf("SetSecret failed: %v", err)
+		}
+	}
+
+	// Verify audit log integrity
+	result, err := v.AuditVerify()
+	if err != nil {
+		t.Fatalf("AuditVerify failed: %v", err)
+	}
+
+	if !result.Valid {
+		t.Errorf("AuditVerify returned invalid: %v", result.Errors)
+	}
+
+	if result.RecordsTotal < 5 {
+		t.Errorf("AuditVerify expected at least 5 events, got %d", result.RecordsTotal)
+	}
+
+	if result.RecordsVerified < 5 {
+		t.Errorf("AuditVerify expected at least 5 verified records, got %d", result.RecordsVerified)
+	}
+}
+
+// TestAuditLogger tests that AuditLogger getter returns the audit logger
+func TestAuditLogger(t *testing.T) {
+	tmpDir := t.TempDir()
+	v := New(tmpDir)
+
+	if err := v.Init("testpassword123"); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := v.Unlock("testpassword123"); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+
+	logger := v.AuditLogger()
+	if logger == nil {
+		t.Error("AuditLogger() returned nil")
+	}
+}
+
+// TestScanSecretEntryRow tests the internal scanSecretEntryRow function indirectly
+// Note: scanSecretEntryRow only retrieves Key, Tags, ExpiresAt, CreatedAt, UpdatedAt
+// Metadata is NOT included in list queries (stored separately for performance)
+func TestScanSecretEntryRowViaList(t *testing.T) {
+	tmpDir := t.TempDir()
+	v := New(tmpDir)
+
+	if err := v.Init("testpassword123"); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := v.Unlock("testpassword123"); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+
+	// Create secret with metadata and tags
+	now := time.Now().Add(30 * 24 * time.Hour)
+	err := v.SetSecret("test-key", &SecretEntry{
+		Key:   "test-key",
+		Value: []byte("secret-value"),
+		Metadata: &SecretMetadata{
+			Notes: "Test notes",
+			URL:   "https://example.com",
+		},
+		Tags:      []string{"tag1", "tag2"},
+		ExpiresAt: &now,
+	})
+	if err != nil {
+		t.Fatalf("SetSecret failed: %v", err)
+	}
+
+	// Test via ListSecretsByTag - exercises scanSecretEntryRow
+	results, err := v.ListSecretsByTag("tag1")
+	if err != nil {
+		t.Fatalf("ListSecretsByTag failed: %v", err)
+	}
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	entry := results[0]
+	if entry.Key != "test-key" {
+		t.Errorf("expected key 'test-key', got %q", entry.Key)
+	}
+	if len(entry.Tags) != 2 {
+		t.Errorf("expected 2 tags, got %d", len(entry.Tags))
+	}
+	// Note: Metadata is NOT populated in list queries (scanSecretEntryRow)
+	// This is intentional - metadata requires a separate GetSecret call
+	if entry.ExpiresAt == nil {
+		t.Error("expected ExpiresAt to be populated")
+	}
+
+	// Verify Value is NOT populated (security requirement)
+	if len(entry.Value) != 0 {
+		t.Error("Value should not be populated in list results")
 	}
 }
