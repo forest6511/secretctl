@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestNew(t *testing.T) {
@@ -1444,5 +1445,208 @@ func TestPasswordStrengthString(t *testing.T) {
 				t.Errorf("String(): expected %q, got %q", tt.expected, got)
 			}
 		})
+	}
+}
+
+// TestListSecretsWithMetadata verifies that ListSecretsWithMetadata:
+// 1. Returns entries with metadata (Notes/URL) populated
+// 2. Does NOT return secret values (they should be nil/empty)
+func TestListSecretsWithMetadata(t *testing.T) {
+	tmpDir := t.TempDir()
+	v := New(tmpDir)
+
+	// Initialize and unlock
+	if err := v.Init("testpassword123"); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := v.Unlock("testpassword123"); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+
+	// Create test secrets with and without metadata
+	secretValue := []byte("supersecretvalue123")
+
+	// Secret with metadata
+	if err := v.SetSecret("key-with-meta", &SecretEntry{
+		Value: secretValue,
+		Metadata: &SecretMetadata{
+			Notes: "This is a test note",
+			URL:   "https://example.com",
+		},
+		Tags: []string{"test"},
+	}); err != nil {
+		t.Fatalf("SetSecret with metadata failed: %v", err)
+	}
+
+	// Secret without metadata
+	if err := v.SetSecret("key-without-meta", &SecretEntry{
+		Value: secretValue,
+	}); err != nil {
+		t.Fatalf("SetSecret without metadata failed: %v", err)
+	}
+
+	// List with metadata
+	entries, err := v.ListSecretsWithMetadata()
+	if err != nil {
+		t.Fatalf("ListSecretsWithMetadata failed: %v", err)
+	}
+
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+
+	// Check that values are NOT populated (security requirement)
+	for _, entry := range entries {
+		if len(entry.Value) != 0 {
+			t.Errorf("entry %q has Value populated (security violation!)", entry.Key)
+		}
+	}
+
+	// Find the entry with metadata
+	var withMeta, withoutMeta *SecretEntry
+	for _, entry := range entries {
+		if entry.Key == "key-with-meta" {
+			withMeta = entry
+		} else if entry.Key == "key-without-meta" {
+			withoutMeta = entry
+		}
+	}
+
+	if withMeta == nil || withoutMeta == nil {
+		t.Fatal("couldn't find expected entries")
+	}
+
+	// Verify metadata IS populated for the entry that has it
+	if withMeta.Metadata == nil {
+		t.Error("expected metadata to be populated for key-with-meta")
+	} else {
+		if withMeta.Metadata.Notes != "This is a test note" {
+			t.Errorf("expected notes 'This is a test note', got %q", withMeta.Metadata.Notes)
+		}
+		if withMeta.Metadata.URL != "https://example.com" {
+			t.Errorf("expected URL 'https://example.com', got %q", withMeta.Metadata.URL)
+		}
+	}
+
+	// Verify metadata is nil for entry without it
+	if withoutMeta.Metadata != nil {
+		t.Error("expected metadata to be nil for key-without-meta")
+	}
+
+	// Verify tags are populated
+	if len(withMeta.Tags) != 1 || withMeta.Tags[0] != "test" {
+		t.Errorf("expected tags ['test'], got %v", withMeta.Tags)
+	}
+}
+
+// TestListSecretsByTagNoValueDecryption verifies that ListSecretsByTag
+// does NOT return secret values (they should be nil/empty).
+func TestListSecretsByTagNoValueDecryption(t *testing.T) {
+	tmpDir := t.TempDir()
+	v := New(tmpDir)
+
+	// Initialize and unlock
+	if err := v.Init("testpassword123"); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := v.Unlock("testpassword123"); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+
+	secretValue := []byte("supersecretvalue123")
+
+	// Create secrets with tags
+	if err := v.SetSecret("tagged-secret-1", &SecretEntry{
+		Value: secretValue,
+		Tags:  []string{"production", "database"},
+	}); err != nil {
+		t.Fatalf("SetSecret 1 failed: %v", err)
+	}
+
+	if err := v.SetSecret("tagged-secret-2", &SecretEntry{
+		Value: secretValue,
+		Tags:  []string{"production"},
+	}); err != nil {
+		t.Fatalf("SetSecret 2 failed: %v", err)
+	}
+
+	// List by tag
+	entries, err := v.ListSecretsByTag("production")
+	if err != nil {
+		t.Fatalf("ListSecretsByTag failed: %v", err)
+	}
+
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+
+	// CRITICAL: Verify values are NOT populated (security requirement)
+	for _, entry := range entries {
+		if len(entry.Value) != 0 {
+			t.Errorf("entry %q has Value populated (security violation!)", entry.Key)
+		}
+	}
+
+	// Verify tags are populated
+	for _, entry := range entries {
+		if len(entry.Tags) == 0 {
+			t.Errorf("entry %q has no tags", entry.Key)
+		}
+	}
+}
+
+// TestListExpiringSecretsNoValueDecryption verifies that ListExpiringSecrets
+// does NOT return secret values (they should be nil/empty).
+func TestListExpiringSecretsNoValueDecryption(t *testing.T) {
+	tmpDir := t.TempDir()
+	v := New(tmpDir)
+
+	// Initialize and unlock
+	if err := v.Init("testpassword123"); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := v.Unlock("testpassword123"); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+
+	secretValue := []byte("supersecretvalue123")
+
+	// Create a secret that expires soon (within 30 days)
+	expiresSoon := time.Now().Add(7 * 24 * time.Hour) // 7 days from now
+	if err := v.SetSecret("expiring-secret", &SecretEntry{
+		Value:     secretValue,
+		ExpiresAt: &expiresSoon,
+		Metadata: &SecretMetadata{
+			Notes: "This secret expires soon",
+		},
+	}); err != nil {
+		t.Fatalf("SetSecret failed: %v", err)
+	}
+
+	// List expiring secrets (within 30 days)
+	entries, err := v.ListExpiringSecrets(30 * 24 * time.Hour)
+	if err != nil {
+		t.Fatalf("ListExpiringSecrets failed: %v", err)
+	}
+
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+
+	// CRITICAL: Verify value is NOT populated (security requirement)
+	if len(entries[0].Value) != 0 {
+		t.Error("expiring entry has Value populated (security violation!)")
+	}
+
+	// Verify metadata IS populated
+	if entries[0].Metadata == nil {
+		t.Error("expected metadata to be populated")
+	} else if entries[0].Metadata.Notes != "This secret expires soon" {
+		t.Errorf("expected notes, got %q", entries[0].Metadata.Notes)
+	}
+
+	// Verify expiration is populated
+	if entries[0].ExpiresAt == nil {
+		t.Error("expected ExpiresAt to be populated")
 	}
 }
