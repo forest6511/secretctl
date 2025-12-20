@@ -18,6 +18,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/forest6511/secretctl/pkg/audit"
 	"github.com/forest6511/secretctl/pkg/vault"
 )
 
@@ -103,16 +104,19 @@ func (s *Server) handleSecretList(_ context.Context, _ *mcp.CallToolRequest, inp
 		// Filter by tag
 		entries, err = s.vault.ListSecretsByTag(input.Tag)
 		if err != nil {
+			_ = s.vault.Audit().LogError(audit.OpSecretList, audit.SourceMCP, "", "LIST_FAILED", err.Error())
 			return nil, SecretListOutput{}, fmt.Errorf("failed to list secrets by tag: %w", err)
 		}
 	case input.ExpiringWithin != "":
 		// Filter by expiration
 		duration, parseErr := parseDuration(input.ExpiringWithin)
 		if parseErr != nil {
+			_ = s.vault.Audit().LogError(audit.OpSecretList, audit.SourceMCP, "", "INVALID_DURATION", parseErr.Error())
 			return nil, SecretListOutput{}, fmt.Errorf("invalid expiring_within format: %w", parseErr)
 		}
 		entries, err = s.vault.ListExpiringSecrets(duration)
 		if err != nil {
+			_ = s.vault.Audit().LogError(audit.OpSecretList, audit.SourceMCP, "", "LIST_FAILED", err.Error())
 			return nil, SecretListOutput{}, fmt.Errorf("failed to list expiring secrets: %w", err)
 		}
 	default:
@@ -120,6 +124,7 @@ func (s *Server) handleSecretList(_ context.Context, _ *mcp.CallToolRequest, inp
 		// This follows Option D+ principle: minimize plaintext exposure
 		entries, err = s.vault.ListSecretsWithMetadata()
 		if err != nil {
+			_ = s.vault.Audit().LogError(audit.OpSecretList, audit.SourceMCP, "", "LIST_FAILED", err.Error())
 			return nil, SecretListOutput{}, fmt.Errorf("failed to list secrets: %w", err)
 		}
 	}
@@ -144,23 +149,30 @@ func (s *Server) handleSecretList(_ context.Context, _ *mcp.CallToolRequest, inp
 		output.Secrets = append(output.Secrets, info)
 	}
 
+	// Log successful list operation
+	_ = s.vault.Audit().LogSuccess(audit.OpSecretList, audit.SourceMCP, "")
+
 	return nil, output, nil
 }
 
 // handleSecretExists handles the secret_exists tool call.
 func (s *Server) handleSecretExists(_ context.Context, _ *mcp.CallToolRequest, input SecretExistsInput) (*mcp.CallToolResult, SecretExistsOutput, error) {
 	if input.Key == "" {
+		_ = s.vault.Audit().LogError(audit.OpSecretExists, audit.SourceMCP, "", "INVALID_INPUT", "key is required")
 		return nil, SecretExistsOutput{}, errors.New("key is required")
 	}
 
 	entry, err := s.vault.GetSecret(input.Key)
 	if err != nil {
 		if errors.Is(err, vault.ErrSecretNotFound) {
+			// Log successful check (key doesn't exist is a valid result)
+			_ = s.vault.Audit().LogSuccess(audit.OpSecretExists, audit.SourceMCP, input.Key)
 			return nil, SecretExistsOutput{
 				Exists: false,
 				Key:    input.Key,
 			}, nil
 		}
+		_ = s.vault.Audit().LogError(audit.OpSecretExists, audit.SourceMCP, input.Key, "GET_FAILED", err.Error())
 		return nil, SecretExistsOutput{}, fmt.Errorf("failed to get secret: %w", err)
 	}
 
@@ -177,22 +189,30 @@ func (s *Server) handleSecretExists(_ context.Context, _ *mcp.CallToolRequest, i
 		output.ExpiresAt = entry.ExpiresAt.Format(time.RFC3339)
 	}
 
+	// Log successful exists check
+	_ = s.vault.Audit().LogSuccess(audit.OpSecretExists, audit.SourceMCP, input.Key)
+
 	return nil, output, nil
 }
 
 // handleSecretGetMasked handles the secret_get_masked tool call.
 func (s *Server) handleSecretGetMasked(_ context.Context, _ *mcp.CallToolRequest, input SecretGetMaskedInput) (*mcp.CallToolResult, SecretGetMaskedOutput, error) {
 	if input.Key == "" {
+		_ = s.vault.Audit().LogError(audit.OpSecretGetMasked, audit.SourceMCP, "", "INVALID_INPUT", "key is required")
 		return nil, SecretGetMaskedOutput{}, errors.New("key is required")
 	}
 
 	entry, err := s.vault.GetSecret(input.Key)
 	if err != nil {
+		_ = s.vault.Audit().LogError(audit.OpSecretGetMasked, audit.SourceMCP, input.Key, "GET_FAILED", err.Error())
 		return nil, SecretGetMaskedOutput{}, fmt.Errorf("failed to get secret: %w", err)
 	}
 
 	// Mask the value per mcp-design-ja.md §3.3
 	masked := maskValue(entry.Value)
+
+	// Log successful masked get
+	_ = s.vault.Audit().LogSuccess(audit.OpSecretGetMasked, audit.SourceMCP, input.Key)
 
 	return nil, SecretGetMaskedOutput{
 		Key:         input.Key,
@@ -232,30 +252,37 @@ func (s *Server) handleSecretRun(ctx context.Context, _ *mcp.CallToolRequest, in
 	case s.runSem <- struct{}{}:
 		defer func() { <-s.runSem }()
 	default:
+		_ = s.vault.Audit().LogError(audit.OpSecretRun, audit.SourceMCP, "", "RATE_LIMITED", "too many concurrent operations")
 		return nil, SecretRunOutput{}, errors.New("too many concurrent secret_run operations (max 5)")
 	}
 
 	// Validate required fields
 	if len(input.Keys) == 0 {
+		_ = s.vault.Audit().LogError(audit.OpSecretRun, audit.SourceMCP, "", "INVALID_INPUT", "keys is required")
 		return nil, SecretRunOutput{}, errors.New("keys is required")
 	}
 	if input.Command == "" {
+		_ = s.vault.Audit().LogError(audit.OpSecretRun, audit.SourceMCP, "", "INVALID_INPUT", "command is required")
 		return nil, SecretRunOutput{}, errors.New("command is required")
 	}
 
 	// Validate limits per mcp-design-ja.md §6.4
 	if len(input.Keys) > 10 {
+		_ = s.vault.Audit().LogError(audit.OpSecretRun, audit.SourceMCP, "", "INVALID_INPUT", "too many keys")
 		return nil, SecretRunOutput{}, errors.New("too many keys (max 10)")
 	}
 	if len(input.Command) > 4096 {
+		_ = s.vault.Audit().LogError(audit.OpSecretRun, audit.SourceMCP, "", "INVALID_INPUT", "command too long")
 		return nil, SecretRunOutput{}, errors.New("command too long (max 4096)")
 	}
 	if len(input.Args) > 100 {
+		_ = s.vault.Audit().LogError(audit.OpSecretRun, audit.SourceMCP, "", "INVALID_INPUT", "too many args")
 		return nil, SecretRunOutput{}, errors.New("too many args (max 100)")
 	}
 
 	// Check policy
 	if s.policy == nil {
+		_ = s.vault.Audit().LogDenied(audit.OpSecretRunDenied, audit.SourceMCP, "", "NO_POLICY")
 		return nil, SecretRunOutput{}, errors.New("MCP policy not configured. Create ~/.secretctl/mcp-policy.yaml to enable secret_run")
 	}
 
@@ -275,6 +302,7 @@ func (s *Server) handleSecretRun(ctx context.Context, _ *mcp.CallToolRequest, in
 		allowed, reason = s.policy.IsCommandAllowed(resolvedCmd)
 	}
 	if !allowed {
+		_ = s.vault.Audit().LogDenied(audit.OpSecretRunDenied, audit.SourceMCP, input.Command, reason)
 		return nil, SecretRunOutput{}, fmt.Errorf("command not allowed by policy: %s", reason)
 	}
 
@@ -283,6 +311,7 @@ func (s *Server) handleSecretRun(ctx context.Context, _ *mcp.CallToolRequest, in
 	if input.Env != "" {
 		resolvedKeys, err := s.policy.ResolveAliasKeys(input.Env, input.Keys)
 		if err != nil {
+			_ = s.vault.Audit().LogError(audit.OpSecretRun, audit.SourceMCP, "", "ALIAS_FAILED", err.Error())
 			return nil, SecretRunOutput{}, fmt.Errorf("failed to resolve environment alias '%s': %w", input.Env, err)
 		}
 		keys = resolvedKeys
@@ -297,6 +326,7 @@ func (s *Server) handleSecretRun(ctx context.Context, _ *mcp.CallToolRequest, in
 			// Try our custom duration parser
 			timeout, err = parseDuration(input.Timeout)
 			if err != nil {
+				_ = s.vault.Audit().LogError(audit.OpSecretRun, audit.SourceMCP, "", "INVALID_TIMEOUT", err.Error())
 				return nil, SecretRunOutput{}, fmt.Errorf("invalid timeout format: %w", err)
 			}
 		}
@@ -309,6 +339,7 @@ func (s *Server) handleSecretRun(ctx context.Context, _ *mcp.CallToolRequest, in
 	// Collect secrets (using resolved keys if env alias was applied)
 	secrets, err := s.collectSecrets(keys)
 	if err != nil {
+		_ = s.vault.Audit().LogError(audit.OpSecretRun, audit.SourceMCP, "", "SECRET_COLLECT_FAILED", err.Error())
 		return nil, SecretRunOutput{}, err
 	}
 	defer wipeSecrets(secrets)
@@ -316,6 +347,7 @@ func (s *Server) handleSecretRun(ctx context.Context, _ *mcp.CallToolRequest, in
 	// Build environment
 	env, err := s.buildEnvironment(secrets, input.EnvPrefix)
 	if err != nil {
+		_ = s.vault.Audit().LogError(audit.OpSecretRun, audit.SourceMCP, "", "ENV_BUILD_FAILED", err.Error())
 		return nil, SecretRunOutput{}, err
 	}
 
@@ -323,11 +355,15 @@ func (s *Server) handleSecretRun(ctx context.Context, _ *mcp.CallToolRequest, in
 	startTime := time.Now()
 	result, err := s.executeCommand(ctx, resolvedCmd, input.Args, env, secrets, timeout)
 	if err != nil {
+		_ = s.vault.Audit().LogError(audit.OpSecretRun, audit.SourceMCP, input.Command, "EXEC_FAILED", err.Error())
 		return nil, SecretRunOutput{}, err
 	}
 
 	result.DurationMs = time.Since(startTime).Milliseconds()
 	result.Sanitized = true
+
+	// Log successful command execution
+	_ = s.vault.Audit().LogSuccess(audit.OpSecretRun, audit.SourceMCP, input.Command)
 
 	return nil, *result, nil
 }
