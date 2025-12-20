@@ -1,5 +1,33 @@
 // Package vault provides secure secret storage with AES-256-GCM encryption.
-// Implements the vault management specified in security-design-ja.md §2-3.
+//
+// The vault stores secrets in an encrypted SQLite database, using a master
+// password to derive the encryption key via Argon2id. All secrets are
+// encrypted individually with unique nonces.
+//
+// # Security Features
+//
+//   - AES-256-GCM authenticated encryption for all secrets
+//   - Argon2id key derivation with OWASP-recommended parameters
+//   - HMAC-chained audit logging for tamper detection
+//   - Rate limiting for unlock attempts (5/10/20 failures = 30s/5m/30m cooldown)
+//   - Secure file permissions (0600 for files, 0700 for directories)
+//
+// # Example Usage
+//
+//	// Create and initialize a new vault
+//	v := vault.New("/path/to/vault")
+//	err := v.Init("masterpassword")
+//
+//	// Open an existing vault
+//	v := vault.New("/path/to/vault")
+//	err := v.Unlock("masterpassword")
+//
+//	// Store and retrieve secrets
+//	err = v.SetSecret("API_KEY", &vault.SecretEntry{Value: []byte("secret")})
+//	entry, err := v.GetSecret("API_KEY")
+//
+//	// Lock when done
+//	err = v.Lock()
 package vault
 
 import (

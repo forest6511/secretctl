@@ -1,5 +1,31 @@
-// Package audit provides audit logging with HMAC chain for tamper detection.
-// Implements requirements-ja.md §7 and security-design-ja.md §8.
+// Package audit provides tamper-evident audit logging with HMAC chaining.
+//
+// This package implements cryptographically secure audit logging where each
+// event is linked to the previous via HMAC, creating an immutable chain that
+// detects any tampering or deletion of records.
+//
+// # Security Features
+//
+//   - HMAC-SHA256 chaining for tamper detection
+//   - Derived audit key from master password via HKDF
+//   - Unique event IDs with timestamp prefix for chronological ordering
+//   - Session tracking for correlated events
+//   - Disk space checks before writing
+//
+// # Event Structure
+//
+// Each audit event records:
+//   - Operation type (vault.unlock, secret.get, etc.)
+//   - Actor information (user, source, session)
+//   - Result (success, error, denied)
+//   - Chain verification data (sequence, previous hash)
+//
+// # Example Usage
+//
+//	logger := audit.NewLogger("/path/to/vault/audit")
+//	logger.SetHMACKey(derivedKey)
+//	err := logger.LogSuccess(audit.OpSecretGet, audit.SourceCLI, "API_KEY")
+//	result, err := logger.Verify()
 package audit
 
 import (
