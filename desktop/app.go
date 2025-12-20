@@ -42,6 +42,9 @@ func (a *App) startup(ctx context.Context) {
 
 // shutdown is called at app termination
 func (a *App) shutdown(ctx context.Context) {
+	// Clear clipboard before exit to prevent secret leakage
+	a.ClearClipboard()
+
 	if a.vault != nil {
 		a.vault.Lock()
 	}
@@ -138,11 +141,14 @@ func (a *App) Unlock(password string) error {
 	return nil
 }
 
-// Lock locks the vault
+// Lock locks the vault and clears clipboard
 func (a *App) Lock() error {
 	if !a.unlocked {
 		return errors.New("vault not unlocked")
 	}
+
+	// Clear clipboard before locking to prevent secret leakage
+	a.ClearClipboard()
 
 	a.vault.Lock()
 	a.vault = nil
@@ -305,6 +311,13 @@ func (a *App) CopyToClipboard(value string) error {
 	}()
 
 	return nil
+}
+
+// ClearClipboard clears the system clipboard
+func (a *App) ClearClipboard() {
+	if a.ctx != nil {
+		runtime.ClipboardSetText(a.ctx, "")
+	}
 }
 
 // ============================================================================
