@@ -1534,7 +1534,7 @@ func TestListExpiringSecrets(t *testing.T) {
 		key       string
 		expiresAt *time.Time
 	}{
-		{"expires-soon", func() *time.Time { t := now.Add(7 * 24 * time.Hour); return &t }()},       // 7 days
+		{"expires-soon", func() *time.Time { t := now.Add(7 * 24 * time.Hour); return &t }()},      // 7 days
 		{"expires-later", func() *time.Time { t := now.Add(60 * 24 * time.Hour); return &t }()},    // 60 days
 		{"expires-very-soon", func() *time.Time { t := now.Add(1 * 24 * time.Hour); return &t }()}, // 1 day
 		{"no-expiry", nil},
