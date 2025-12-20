@@ -255,7 +255,21 @@ func (s *Server) handleSecretRun(ctx context.Context, _ *mcp.CallToolRequest, in
 		return nil, SecretRunOutput{}, errors.New("MCP policy not configured. Create ~/.secretctl/mcp-policy.yaml to enable secret_run")
 	}
 
+	// SECURITY: Resolve command path BEFORE policy check to prevent PATH manipulation attacks.
+	// This ensures we check the policy against the actual binary that will be executed,
+	// not just the command name which could be spoofed via PATH.
+	resolvedCmd, err := ResolveAndValidateCommand(input.Command)
+	if err != nil {
+		return nil, SecretRunOutput{}, fmt.Errorf("command validation failed: %w", err)
+	}
+
+	// Check policy against BOTH the original command name and the resolved path
+	// This allows policies to specify either "curl" or "/usr/bin/curl"
 	allowed, reason := s.policy.IsCommandAllowed(input.Command)
+	if !allowed {
+		// Also try with the resolved path in case policy uses absolute paths
+		allowed, reason = s.policy.IsCommandAllowed(resolvedCmd)
+	}
 	if !allowed {
 		return nil, SecretRunOutput{}, fmt.Errorf("command not allowed by policy: %s", reason)
 	}
@@ -301,9 +315,9 @@ func (s *Server) handleSecretRun(ctx context.Context, _ *mcp.CallToolRequest, in
 		return nil, SecretRunOutput{}, err
 	}
 
-	// Execute command
+	// Execute command using the pre-resolved and validated path
 	startTime := time.Now()
-	result, err := s.executeCommand(ctx, input.Command, input.Args, env, secrets, timeout)
+	result, err := s.executeCommand(ctx, resolvedCmd, input.Args, env, secrets, timeout)
 	if err != nil {
 		return nil, SecretRunOutput{}, err
 	}
@@ -522,7 +536,10 @@ func validateEnvName(name string) error {
 	return nil
 }
 
-// executeCommand runs the command with secrets in environment
+// executeCommand runs the command with secrets in environment.
+// IMPORTANT: The command parameter MUST be an absolute path that has already been
+// resolved and validated by ResolveAndValidateCommand. This function does NOT
+// perform path lookup to prevent PATH manipulation attacks.
 func (s *Server) executeCommand(ctx context.Context, command string, args []string, env []string, secrets []secretData, timeout time.Duration) (*SecretRunOutput, error) {
 	// Validate command path per §6.3.4
 	if err := validateCommand(command); err != nil {
@@ -534,18 +551,19 @@ func (s *Server) executeCommand(ctx context.Context, command string, args []stri
 		return nil, err
 	}
 
+	// Verify command is an absolute path (security check - should always be true
+	// since we require pre-resolution via ResolveAndValidateCommand)
+	if !filepath.IsAbs(command) {
+		return nil, fmt.Errorf("security error: command must be an absolute path, got: %s", command)
+	}
+
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	// Look up command
-	cmdPath, err := exec.LookPath(command)
-	if err != nil {
-		return nil, fmt.Errorf("command not found: %s", command)
-	}
-
-	// Create command - NO shell (shell=false per §6.3.1)
-	cmd := exec.CommandContext(ctx, cmdPath, args...)
+	// Create command directly with the pre-resolved absolute path
+	// NO LookPath here - the path was already resolved and validated
+	cmd := exec.CommandContext(ctx, command, args...)
 	cmd.Env = env
 
 	// Capture output
@@ -554,7 +572,7 @@ func (s *Server) executeCommand(ctx context.Context, command string, args []stri
 	cmd.Stderr = &stderr
 
 	// Execute
-	err = cmd.Run()
+	err := cmd.Run()
 
 	// Sanitize output
 	sanitizer := newOutputSanitizer(secrets)
