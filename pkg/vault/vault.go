@@ -305,6 +305,25 @@ func (v *Vault) Init(masterPassword string) error {
 
 	// 5. Initialize SQLite database
 	dbPath := filepath.Join(v.path, DBFileName)
+
+	// Pre-create the file with secure permissions (0600) to prevent race condition.
+	// Without this, sql.Open creates the file with default umask permissions,
+	// then we chmod after, leaving a window where the file could be world-readable.
+	// This follows CWE-377 mitigation: create file atomically with correct permissions.
+	f, err := os.OpenFile(dbPath, os.O_CREATE|os.O_RDWR, FileMode)
+	if err != nil {
+		return fmt.Errorf("vault: failed to create database file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("vault: failed to close database file: %w", err)
+	}
+
+	// Enforce correct permissions in case file already existed (pre-creation attack defense)
+	// or was created with different umask. This provides defense-in-depth.
+	if err := os.Chmod(dbPath, FileMode); err != nil {
+		return fmt.Errorf("vault: failed to set database permissions: %w", err)
+	}
+
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return fmt.Errorf("vault: failed to open database: %w", err)
@@ -349,11 +368,6 @@ func (v *Vault) Init(masterPassword string) error {
 	metaPath := filepath.Join(v.path, MetaFileName)
 	if err := os.WriteFile(metaPath, metaJSON, FileMode); err != nil {
 		return fmt.Errorf("vault: failed to write metadata file: %w", err)
-	}
-
-	// Set file permissions (0600)
-	if err := os.Chmod(dbPath, FileMode); err != nil {
-		return fmt.Errorf("vault: failed to set database permissions: %w", err)
 	}
 
 	// Initialize audit logger with derived key and log vault init
