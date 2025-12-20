@@ -533,6 +533,11 @@ func (v *Vault) Lock() {
 	}
 }
 
+// Audit returns the vault's audit logger for MCP and other external use.
+func (v *Vault) Audit() *audit.Logger {
+	return v.audit
+}
+
 // IsLocked returns whether the vault is locked
 func (v *Vault) IsLocked() bool {
 	v.mu.RLock()
