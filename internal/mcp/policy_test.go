@@ -737,8 +737,8 @@ func TestResolveAndValidateCommand_TrustedDirectory(t *testing.T) {
 			resolved, err := ResolveAndValidateCommand(cmd)
 			if err != nil {
 				// Command might not exist on all systems, skip if not found
-				if err.Error() != "" && (err == ErrCommandNotFound ||
-					(len(err.Error()) > 0 && err.Error()[:14] == "command not fo")) {
+				errMsg := err.Error()
+				if err == ErrCommandNotFound || (len(errMsg) >= 14 && errMsg[:14] == "command not fo") {
 					t.Skipf("command %s not found on this system", cmd)
 				}
 				t.Errorf("ResolveAndValidateCommand(%s) error: %v", cmd, err)
