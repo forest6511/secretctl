@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -1032,15 +1033,17 @@ func (v *Vault) DeleteSecret(key string) error {
 	return nil
 }
 
-// scanSecretEntryRow scans a row and returns a SecretEntry (without value).
-// This is a helper to avoid code duplication for list operations.
-func (v *Vault) scanSecretEntryRow(rows *sql.Rows) (*SecretEntry, error) {
+// scanSecretEntryRowWithMetadata scans a row including metadata (but NOT secret value).
+// This decrypts key name and metadata, but never touches the secret value.
+// Use this for list operations that need metadata presence (HasNotes, HasURL).
+func (v *Vault) scanSecretEntryRowWithMetadata(rows *sql.Rows) (*SecretEntry, error) {
 	var encryptedKey []byte
+	var encryptedMetadata []byte
 	var tagsStr sql.NullString
 	var expiresAt sql.NullTime
 	var createdAt, updatedAt time.Time
 
-	if err := rows.Scan(&encryptedKey, &tagsStr, &expiresAt,
+	if err := rows.Scan(&encryptedKey, &encryptedMetadata, &tagsStr, &expiresAt,
 		&createdAt, &updatedAt); err != nil {
 		return nil, fmt.Errorf("vault: failed to scan row: %w", err)
 	}
@@ -1055,6 +1058,21 @@ func (v *Vault) scanSecretEntryRow(rows *sql.Rows) (*SecretEntry, error) {
 		Key:       string(keyBytes),
 		CreatedAt: createdAt,
 		UpdatedAt: updatedAt,
+	}
+
+	// Decrypt metadata if present (small data - notes/URL, not credentials)
+	if len(encryptedMetadata) > 0 {
+		metadataJSON, err := v.decryptWithNonce(encryptedMetadata)
+		if err != nil {
+			// Log but continue - metadata decryption failure is non-fatal for listing
+			// We still need to parse tags and expiration below
+			log.Printf("vault: metadata decryption failed for key %q: %v", entry.Key, err)
+		} else {
+			var meta SecretMetadata
+			if err := json.Unmarshal(metadataJSON, &meta); err == nil {
+				entry.Metadata = &meta
+			}
+		}
 	}
 
 	// Parse tags from JSON
@@ -1072,7 +1090,43 @@ func (v *Vault) scanSecretEntryRow(rows *sql.Rows) (*SecretEntry, error) {
 	return entry, nil
 }
 
-// ListSecretsByTag retrieves secrets filtered by tag
+// ListSecretsWithMetadata lists all secrets with metadata but WITHOUT decrypting values.
+// This is more secure than GetSecret for list operations as it never exposes secret values.
+func (v *Vault) ListSecretsWithMetadata() ([]*SecretEntry, error) {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+
+	// Check if vault is locked
+	if v.dek == nil {
+		return nil, ErrVaultLocked
+	}
+
+	rows, err := v.db.Query(`
+		SELECT encrypted_key, encrypted_metadata, tags, expires_at, created_at, updated_at
+		FROM secrets
+		ORDER BY created_at`)
+	if err != nil {
+		return nil, fmt.Errorf("vault: failed to query secrets: %w", err)
+	}
+	defer rows.Close()
+
+	var secrets []*SecretEntry
+	for rows.Next() {
+		entry, err := v.scanSecretEntryRowWithMetadata(rows)
+		if err != nil {
+			return nil, err
+		}
+		secrets = append(secrets, entry)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("vault: error iterating rows: %w", err)
+	}
+
+	return secrets, nil
+}
+
+// ListSecretsByTag retrieves secrets filtered by tag (includes metadata, NOT values)
 func (v *Vault) ListSecretsByTag(tag string) ([]*SecretEntry, error) {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
@@ -1084,8 +1138,9 @@ func (v *Vault) ListSecretsByTag(tag string) ([]*SecretEntry, error) {
 
 	// Query with tag filter (tags stored as JSON array, search for the tag string)
 	// This searches for the tag within the JSON array string
+	// Include encrypted_metadata for HasNotes/HasURL support
 	rows, err := v.db.Query(`
-		SELECT encrypted_key, tags, expires_at, created_at, updated_at
+		SELECT encrypted_key, encrypted_metadata, tags, expires_at, created_at, updated_at
 		FROM secrets
 		WHERE tags LIKE ?
 		ORDER BY created_at`,
@@ -1097,7 +1152,7 @@ func (v *Vault) ListSecretsByTag(tag string) ([]*SecretEntry, error) {
 
 	var secrets []*SecretEntry
 	for rows.Next() {
-		entry, err := v.scanSecretEntryRow(rows)
+		entry, err := v.scanSecretEntryRowWithMetadata(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -1117,7 +1172,7 @@ func (v *Vault) ListSecretsByTag(tag string) ([]*SecretEntry, error) {
 	return secrets, nil
 }
 
-// ListExpiringSecrets retrieves secrets expiring within the specified duration
+// ListExpiringSecrets retrieves secrets expiring within the specified duration (includes metadata, NOT values)
 func (v *Vault) ListExpiringSecrets(within time.Duration) ([]*SecretEntry, error) {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
@@ -1129,8 +1184,9 @@ func (v *Vault) ListExpiringSecrets(within time.Duration) ([]*SecretEntry, error
 
 	deadline := time.Now().Add(within)
 
+	// Include encrypted_metadata for HasNotes/HasURL support
 	rows, err := v.db.Query(`
-		SELECT encrypted_key, tags, expires_at, created_at, updated_at
+		SELECT encrypted_key, encrypted_metadata, tags, expires_at, created_at, updated_at
 		FROM secrets
 		WHERE expires_at IS NOT NULL AND expires_at <= ?
 		ORDER BY expires_at`,
@@ -1142,7 +1198,7 @@ func (v *Vault) ListExpiringSecrets(within time.Duration) ([]*SecretEntry, error
 
 	var secrets []*SecretEntry
 	for rows.Next() {
-		entry, err := v.scanSecretEntryRow(rows)
+		entry, err := v.scanSecretEntryRowWithMetadata(rows)
 		if err != nil {
 			return nil, err
 		}

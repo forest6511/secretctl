@@ -3,12 +3,16 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -112,19 +116,11 @@ func (s *Server) handleSecretList(_ context.Context, _ *mcp.CallToolRequest, inp
 			return nil, SecretListOutput{}, fmt.Errorf("failed to list expiring secrets: %w", err)
 		}
 	default:
-		// List all secrets - need to get full entries for metadata
-		keys, listErr := s.vault.ListSecrets()
-		if listErr != nil {
-			return nil, SecretListOutput{}, fmt.Errorf("failed to list secrets: %w", listErr)
-		}
-		// Get metadata for each key
-		for _, key := range keys {
-			entry, getErr := s.vault.GetSecret(key)
-			if getErr != nil {
-				continue // Skip entries we can't read
-			}
-			entry.Key = key
-			entries = append(entries, entry)
+		// List all secrets with metadata but WITHOUT decrypting values
+		// This follows Option D+ principle: minimize plaintext exposure
+		entries, err = s.vault.ListSecretsWithMetadata()
+		if err != nil {
+			return nil, SecretListOutput{}, fmt.Errorf("failed to list secrets: %w", err)
 		}
 	}
 
@@ -645,7 +641,8 @@ func validateArgs(args []string) error {
 	return nil
 }
 
-// outputSanitizer sanitizes output by replacing secret values
+// outputSanitizer sanitizes output by replacing secret values and their encoded forms.
+// This prevents secrets from leaking through MCP output in any form.
 type outputSanitizer struct {
 	replacements []secretReplacement
 }
@@ -655,18 +652,83 @@ type secretReplacement struct {
 	placeholder []byte
 }
 
+// newOutputSanitizer creates a sanitizer that will redact:
+// - The raw secret value (all lengths, not just >= 4 bytes)
+// - Base64-encoded forms (padded and raw/unpadded, standard and URL-safe)
+// - URL-encoded forms (QueryEscape and PathEscape styles)
+// - Hex-encoded forms (uppercase and lowercase, with and without 0x prefix)
 func newOutputSanitizer(secrets []secretData) *outputSanitizer {
+	// Use a map to deduplicate encoded forms
+	seen := make(map[string]bool)
 	var replacements []secretReplacement
-	for _, secret := range secrets {
-		// Only sanitize values >= 4 bytes per design
-		if len(secret.value) >= 4 {
-			replacements = append(replacements, secretReplacement{
-				secret:      secret.value,
-				placeholder: []byte(fmt.Sprintf("[REDACTED:%s]", keyToEnvName(secret.key))),
-			})
+
+	addReplacement := func(secret []byte, placeholder []byte) {
+		key := string(secret)
+		if seen[key] || len(secret) == 0 {
+			return
 		}
+		seen[key] = true
+		replacements = append(replacements, secretReplacement{
+			secret:      secret,
+			placeholder: placeholder,
+		})
 	}
+
+	for _, secret := range secrets {
+		placeholder := []byte(fmt.Sprintf("[REDACTED:%s]", keyToEnvName(secret.key)))
+
+		// Always add the raw value replacement, regardless of length
+		// Short secrets are security-critical too (e.g., PIN codes, short API keys)
+		addReplacement(secret.value, placeholder)
+
+		// Only generate encoded forms for secrets with content
+		if len(secret.value) == 0 {
+			continue
+		}
+
+		// Base64-encoded forms (padded)
+		addReplacement([]byte(base64.StdEncoding.EncodeToString(secret.value)), placeholder)
+		addReplacement([]byte(base64.URLEncoding.EncodeToString(secret.value)), placeholder)
+
+		// Base64-encoded forms (raw/unpadded) - catches JWT segments, etc.
+		addReplacement([]byte(base64.RawStdEncoding.EncodeToString(secret.value)), placeholder)
+		addReplacement([]byte(base64.RawURLEncoding.EncodeToString(secret.value)), placeholder)
+
+		// URL-encoded forms
+		addReplacement([]byte(url.QueryEscape(string(secret.value))), placeholder)    // space as +
+		addReplacement([]byte(url.PathEscape(string(secret.value))), placeholder)     // space as %20
+		addReplacement([]byte(percentEncodeLower(string(secret.value))), placeholder) // lowercase %xx
+
+		// Hex-encoded forms (plain)
+		hexLower := hex.EncodeToString(secret.value)
+		hexUpper := strings.ToUpper(hexLower)
+		addReplacement([]byte(hexLower), placeholder)
+		addReplacement([]byte(hexUpper), placeholder)
+
+		// Hex-encoded forms with 0x prefix (common in debug output)
+		addReplacement([]byte("0x"+hexLower), placeholder)
+		addReplacement([]byte("0X"+hexUpper), placeholder)
+	}
+
+	// Sort replacements by length (longest first) to avoid partial replacements
+	// e.g., if we have "secret" and "secretkey", replace "secretkey" first
+	sortReplacementsByLength(replacements)
+
 	return &outputSanitizer{replacements: replacements}
+}
+
+// percentEncodeLower generates URL encoding with lowercase hex digits
+// (some systems output %2f instead of %2F)
+func percentEncodeLower(s string) string {
+	return strings.ToLower(url.QueryEscape(s))
+}
+
+// sortReplacementsByLength sorts replacements by secret length in descending order.
+// This ensures longer matches are replaced first, preventing partial replacement issues.
+func sortReplacementsByLength(replacements []secretReplacement) {
+	sort.Slice(replacements, func(i, j int) bool {
+		return len(replacements[i].secret) > len(replacements[j].secret)
+	})
 }
 
 func (s *outputSanitizer) sanitize(data []byte) []byte {
