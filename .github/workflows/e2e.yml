@@ -77,12 +77,19 @@ jobs:
 
       - name: Run E2E tests with xvfb
         working-directory: desktop/frontend
-        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" npm run test:e2e
+        # Use timeout to prevent hanging if webServer cleanup fails
+        run: timeout 10m xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" npm run test:e2e || (exit_code=$?; if [ $exit_code -eq 124 ]; then echo "Tests timed out"; exit 1; else exit $exit_code; fi)
         env:
           CI: true
           SECRETCTL_VAULT_DIR: /tmp/secretctl-e2e-test
           # Use default test password from test-config.ts if not set
           E2E_TEST_PASSWORD: ${{ secrets.E2E_TEST_PASSWORD }}
+
+      - name: Cleanup hung processes
+        if: always()
+        run: |
+          pkill -f "wails dev" || true
+          pkill -f "secretctl-desktop" || true
 
       - name: Upload Playwright report
         if: always()
