@@ -119,6 +119,7 @@ func Encrypt(key, plaintext []byte) (ciphertext []byte, nonce []byte, err error)
 	}
 
 	// Encrypt with GCM (authentication tag is appended to ciphertext)
+	// #nosec G407 -- nonce is randomly generated above using crypto/rand.Read()
 	ciphertext = gcm.Seal(nil, nonce, plaintext, nil)
 
 	return ciphertext, nonce, nil
