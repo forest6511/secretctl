@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"syscall"
 
 	"gopkg.in/yaml.v3"
 )
@@ -73,14 +72,11 @@ var TrustedDirectories = []string{
 func LoadPolicy(vaultPath string) (*Policy, error) {
 	policyPath := filepath.Join(vaultPath, PolicyFileName)
 
-	// 1. Open with O_NOFOLLOW to reject symlinks per §4.5.2
-	f, err := os.OpenFile(policyPath, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	// 1. Open with platform-specific handling (O_NOFOLLOW on Unix)
+	f, err := openPolicyFile(policyPath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, ErrPolicyNotFound
-		}
-		if os.IsPermission(err) || errors.Is(err, syscall.ELOOP) {
-			return nil, ErrPolicySymlink
+		if err == ErrPolicyNotFound || err == ErrPolicySymlink {
+			return nil, err
 		}
 		return nil, fmt.Errorf("failed to open policy file: %w", err)
 	}
@@ -98,12 +94,9 @@ func LoadPolicy(vaultPath string) (*Policy, error) {
 		return nil, fmt.Errorf("%w: %o (expected 0600)", ErrPolicyInsecure, perm)
 	}
 
-	// 4. Check ownership (must be current user)
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if ok {
-		if stat.Uid != uint32(os.Getuid()) {
-			return nil, ErrPolicyNotOwnedByUser
-		}
+	// 4. Check ownership (platform-specific)
+	if err := checkFileOwnership(info); err != nil {
+		return nil, err
 	}
 
 	// 5. Read and parse the policy file
