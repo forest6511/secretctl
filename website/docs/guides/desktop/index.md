@@ -42,26 +42,45 @@ The desktop app is designed for:
 
 ## Installation
 
-### macOS
+:::note
+Pre-built binaries are not yet available. Currently, you need to build from source.
+:::
 
-Download the latest `.dmg` from [GitHub Releases](https://github.com/forest6511/secretctl/releases):
+### Prerequisites
+
+- [Go 1.24+](https://go.dev/dl/)
+- [Node.js 18+](https://nodejs.org/) (for frontend build)
+- [Wails CLI v2](https://wails.io/docs/gettingstarted/installation)
+- Platform-specific dependencies (run `wails doctor` to check)
 
 ```bash
-# Or install via Homebrew (coming soon)
-brew install --cask secretctl
+# Install Wails CLI
+go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+# Verify installation
+wails doctor
 ```
 
-### Windows
+### Build from Source
 
-Download the latest `.exe` installer from [GitHub Releases](https://github.com/forest6511/secretctl/releases).
+```bash
+# Clone the repository
+git clone https://github.com/forest6511/secretctl.git
+cd secretctl/desktop
 
-### Linux
+# Install frontend dependencies and build
+wails build
 
-Download the appropriate package for your distribution:
+# The binary will be in desktop/build/bin/
+```
 
-- `.deb` for Debian/Ubuntu
-- `.rpm` for Fedora/RHEL
-- `.AppImage` for universal compatibility
+### Platform-Specific Notes
+
+**macOS**: The built app bundle is `desktop/build/bin/secretctl-desktop.app`
+
+**Windows**: The executable is `desktop/build/bin/secretctl-desktop.exe` (requires WebView2)
+
+**Linux**: The binary is `desktop/build/bin/secretctl-desktop` (requires WebKit2GTK)
 
 ## Getting Started
 
