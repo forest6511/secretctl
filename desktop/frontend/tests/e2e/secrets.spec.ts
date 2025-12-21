@@ -160,14 +160,17 @@ test.describe('Secrets Management', () => {
     // Wait for detail view to load with explicit timeout
     await expect(page.getByTestId('delete-secret-button')).toBeVisible({ timeout: 5000 })
 
-    // Handle confirmation dialog - set up auto-accept handler BEFORE clicking
-    // Use page.on with a simple handler that does not block
-    page.on('dialog', dialog => dialog.accept())
-
-    // Now click delete - the dialog will be auto-accepted
+    // Click delete button to open confirmation dialog
     await page.getByTestId('delete-secret-button').click()
 
-    // Wait for deletion to complete and verify secret is gone from the list
+    // Wait for custom confirm dialog to appear and click confirm
+    await expect(page.getByTestId('confirm-dialog')).toBeVisible({ timeout: 5000 })
+    await page.getByTestId('confirm-dialog-confirm').click()
+
+    // Wait for dialog to close and deletion to complete
+    await expect(page.getByTestId('confirm-dialog')).not.toBeVisible({ timeout: 5000 })
+
+    // Verify secret is gone from the list
     const secretsList = page.getByTestId('secrets-list')
     await expect(secretsList.getByText(deleteKey)).not.toBeVisible({ timeout: 5000 })
   })
