@@ -1,0 +1,218 @@
+# Layer 3: Documentation Drift Detection
+# Runs weekly to detect accumulated documentation drift
+# Creates issues for significant discrepancies
+
+name: Documentation Drift Detection
+
+on:
+  schedule:
+    # Run every Monday at 9:00 AM JST (0:00 UTC)
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
+    inputs:
+      create_issue:
+        description: 'Create issue for drift'
+        required: false
+        default: 'true'
+        type: boolean
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  detect-drift:
+    name: Detect Documentation Drift
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: true
+
+      - name: Check version consistency
+        id: version_check
+        run: |
+          VERSION_GO=$(grep -oP 'Version\s*=\s*"\K[^"]+' cmd/secretctl/version.go 2>/dev/null || echo "NOT_FOUND")
+          VERSION_CHANGELOG=$(grep -oP '## \[\K[0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md 2>/dev/null | head -1 || echo "NOT_FOUND")
+
+          if [[ "$VERSION_GO" != "$VERSION_CHANGELOG" ]]; then
+            echo "drift=true" >> $GITHUB_OUTPUT
+            echo "version_drift=Code: $VERSION_GO, CHANGELOG: $VERSION_CHANGELOG" >> $GITHUB_OUTPUT
+          else
+            echo "drift=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check CLI commands documentation
+        id: cli_check
+        run: |
+          # Extract commands from code
+          COBRA_COMMANDS=$(grep -rh "Use:" cmd/secretctl/*.go 2>/dev/null | grep -oP 'Use:\s*"\K\w+' | sort -u | tr '\n' ',' || echo "")
+
+          # Check against README
+          MISSING=""
+          for cmd in $(echo "$COBRA_COMMANDS" | tr ',' ' '); do
+            if [[ "$cmd" != "secretctl" && "$cmd" != "help" && "$cmd" != "completion" ]]; then
+              if ! grep -q "secretctl $cmd" README.md 2>/dev/null; then
+                MISSING="$MISSING $cmd"
+              fi
+            fi
+          done
+
+          if [[ -n "$MISSING" ]]; then
+            echo "drift=true" >> $GITHUB_OUTPUT
+            echo "missing_commands=$MISSING" >> $GITHUB_OUTPUT
+          else
+            echo "drift=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check SSOT file exists
+        id: ssot_check
+        run: |
+          if [[ ! -f "docs/internal/requirements/project-proposal-ja.md" ]]; then
+            echo "drift=true" >> $GITHUB_OUTPUT
+            echo "ssot_missing=true" >> $GITHUB_OUTPUT
+          else
+            echo "drift=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check for stale TODO markers
+        id: todo_check
+        run: |
+          # Count TODOs in main code
+          TODO_COUNT=$(grep -r "TODO" pkg/ cmd/ --include="*.go" 2>/dev/null | grep -v "_test.go" | wc -l || echo "0")
+
+          if [[ $TODO_COUNT -gt 10 ]]; then
+            echo "drift=true" >> $GITHUB_OUTPUT
+            echo "todo_count=$TODO_COUNT" >> $GITHUB_OUTPUT
+          else
+            echo "drift=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check broken internal links
+        id: link_check
+        run: |
+          BROKEN=""
+          for file in README.md CLAUDE.md CONTRIBUTING.md; do
+            if [[ -f "$file" ]]; then
+              while IFS= read -r link; do
+                if [[ -n "$link" && ! -f "$link" && ! -d "$link" ]]; then
+                  BROKEN="$BROKEN $file:$link"
+                fi
+              done < <(grep -oP '\[.*?\]\(\K[^)]+' "$file" 2>/dev/null | grep -v "^http" | grep -v "^#" || true)
+            fi
+          done
+
+          if [[ -n "$BROKEN" ]]; then
+            echo "drift=true" >> $GITHUB_OUTPUT
+            echo "broken_links=$BROKEN" >> $GITHUB_OUTPUT
+          else
+            echo "drift=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate drift report
+        id: report
+        run: |
+          REPORT=""
+          DRIFT_FOUND=false
+
+          if [[ "${{ steps.version_check.outputs.drift }}" == "true" ]]; then
+            REPORT="$REPORT\n### ❌ Version Mismatch\n${{ steps.version_check.outputs.version_drift }}\n"
+            DRIFT_FOUND=true
+          fi
+
+          if [[ "${{ steps.cli_check.outputs.drift }}" == "true" ]]; then
+            REPORT="$REPORT\n### ⚠️ Undocumented CLI Commands\nMissing in README:${{ steps.cli_check.outputs.missing_commands }}\n"
+            DRIFT_FOUND=true
+          fi
+
+          if [[ "${{ steps.ssot_check.outputs.drift }}" == "true" ]]; then
+            REPORT="$REPORT\n### ❌ SSOT File Missing\nproject-proposal-ja.md not found\n"
+            DRIFT_FOUND=true
+          fi
+
+          if [[ "${{ steps.todo_check.outputs.drift }}" == "true" ]]; then
+            REPORT="$REPORT\n### ⚠️ High TODO Count\n${{ steps.todo_check.outputs.todo_count }} TODOs in codebase\n"
+            DRIFT_FOUND=true
+          fi
+
+          if [[ "${{ steps.link_check.outputs.drift }}" == "true" ]]; then
+            REPORT="$REPORT\n### ❌ Broken Internal Links\n${{ steps.link_check.outputs.broken_links }}\n"
+            DRIFT_FOUND=true
+          fi
+
+          if [[ "$DRIFT_FOUND" == "true" ]]; then
+            echo "drift_found=true" >> $GITHUB_OUTPUT
+            # Escape for multiline
+            echo "report<<EOF" >> $GITHUB_OUTPUT
+            echo -e "$REPORT" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "drift_found=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create issue for drift
+        if: steps.report.outputs.drift_found == 'true' && (github.event.inputs.create_issue != 'false')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = `📚 Documentation Drift Detected - ${new Date().toISOString().split('T')[0]}`;
+            const body = `## Documentation Drift Report
+
+            Automated weekly check detected the following documentation issues:
+
+            ${{ steps.report.outputs.report }}
+
+            ---
+
+            ### Resolution
+
+            1. Run \`/doc-sync\` in Claude Code to generate fixes
+            2. Or manually update the affected files
+            3. Run \`.claude/scripts/doc-consistency-check.sh\` to verify
+
+            ---
+            *This issue was automatically created by the doc-drift workflow.*
+            `;
+
+            // Check for existing open issue
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'documentation,drift'
+            });
+
+            if (issues.data.length === 0) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: title,
+                body: body,
+                labels: ['documentation', 'drift']
+              });
+              console.log('Created new drift issue');
+            } else {
+              // Update existing issue
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issues.data[0].number,
+                body: `## Updated Drift Report\n\n${body}`
+              });
+              console.log('Updated existing drift issue');
+            }
+
+      - name: Summary
+        run: |
+          if [[ "${{ steps.report.outputs.drift_found }}" == "true" ]]; then
+            echo "::warning::Documentation drift detected. See report above."
+          else
+            echo "::notice::No documentation drift detected."
+          fi
