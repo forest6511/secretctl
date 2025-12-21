@@ -46,7 +46,6 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/forest6511/secretctl/pkg/audit"
@@ -1554,33 +1553,9 @@ type DiskSpaceInfo struct {
 	UsedPct   int    `json:"used_pct"`  // Percentage of disk used
 }
 
-// CheckDiskSpace returns disk space information for the vault directory
-func (v *Vault) CheckDiskSpace() (*DiskSpaceInfo, error) {
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs(v.path, &stat); err != nil {
-		// If vault directory doesn't exist yet, check parent
-		parentDir := filepath.Dir(v.path)
-		if err := syscall.Statfs(parentDir, &stat); err != nil {
-			return nil, fmt.Errorf("vault: failed to get disk stats: %w", err)
-		}
-	}
-
-	total := stat.Blocks * uint64(stat.Bsize)
-	free := stat.Bfree * uint64(stat.Bsize)
-	available := stat.Bavail * uint64(stat.Bsize)
-
-	usedPct := 0
-	if total > 0 {
-		usedPct = int(100 * (total - free) / total)
-	}
-
-	return &DiskSpaceInfo{
-		Total:     total,
-		Free:      free,
-		Available: available,
-		UsedPct:   usedPct,
-	}, nil
-}
+// CheckDiskSpace is defined in platform-specific files:
+// - vault_unix.go: Unix/Linux/macOS implementation using syscall.Statfs
+// - vault_windows.go: Windows implementation using GetDiskFreeSpaceEx
 
 // HasSufficientDiskSpace checks if there's enough disk space for operations
 func (v *Vault) HasSufficientDiskSpace() (bool, error) {

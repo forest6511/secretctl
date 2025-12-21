@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -387,7 +386,7 @@ func executeCommand(args []string, env []string, secrets []secretData) error {
 	// Set up graceful shutdown
 	cmd.Cancel = func() error {
 		// Send SIGTERM first for graceful shutdown
-		return cmd.Process.Signal(syscall.SIGTERM)
+		return cmd.Process.Signal(terminateSignal())
 	}
 	cmd.WaitDelay = 5 * time.Second // Wait 5s after SIGTERM before SIGKILL
 
@@ -431,7 +430,7 @@ func executeCommand(args []string, env []string, secrets []secretData) error {
 
 	// Set up signal forwarding
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	signal.Notify(sigChan, signalsToNotify()...)
 	defer signal.Stop(sigChan)
 
 	// Start the command
@@ -492,13 +491,9 @@ func executeCommand(args []string, env []string, secrets []secretData) error {
 	return nil
 }
 
-// disableCoreDumps sets RLIMIT_CORE to 0 to prevent core dumps
-func disableCoreDumps() error {
-	var rLimit syscall.Rlimit
-	rLimit.Cur = 0
-	rLimit.Max = 0
-	return syscall.Setrlimit(syscall.RLIMIT_CORE, &rLimit)
-}
+// disableCoreDumps is defined in platform-specific files:
+// - run_unix.go: Unix/Linux/macOS implementation using syscall.Setrlimit
+// - run_windows.go: Windows no-op (WER handles crash dumps differently)
 
 // exitError represents a command exit with a specific code
 type exitError struct {

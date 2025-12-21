@@ -146,16 +146,19 @@ jobs:
           - os: ubuntu-latest
             platform: linux/amd64
             artifact_name: secretctl-desktop-linux
+            wails_tags: webkit2_41
             deps_cmd: |
               sudo apt-get update
-              sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+              sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
           - os: macos-latest
             platform: darwin/universal
             artifact_name: secretctl-desktop-macos
+            wails_tags: ""
             deps_cmd: ""
           - os: windows-latest
             platform: windows/amd64
             artifact_name: secretctl-desktop-windows.exe
+            wails_tags: ""
             deps_cmd: choco install nsis -y
     runs-on: ${{ matrix.os }}
     steps:
@@ -191,7 +194,12 @@ jobs:
       - name: Build Desktop app
         run: |
           cd desktop
-          wails build -platform ${{ matrix.platform }}
+          if [ -n "${{ matrix.wails_tags }}" ]; then
+            wails build -platform ${{ matrix.platform }} -tags ${{ matrix.wails_tags }}
+          else
+            wails build -platform ${{ matrix.platform }}
+          fi
+        shell: bash
 
       - name: Upload Desktop artifact
         uses: actions/upload-artifact@v4
