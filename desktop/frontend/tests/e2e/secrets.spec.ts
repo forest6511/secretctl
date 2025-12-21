@@ -61,7 +61,7 @@ test.describe('Secrets Management', () => {
     await page.getByTestId('add-secret-button').click()
 
     // Wait for form to be visible
-    await expect(page.getByTestId('secret-key-input')).toBeVisible()
+    await expect(page.getByTestId('secret-key-input')).toBeVisible({ timeout: 5000 })
 
     // Fill form
     await page.getByTestId('secret-key-input').fill(TEST_SECRET.key)
@@ -147,7 +147,7 @@ test.describe('Secrets Management', () => {
     if (!secretExists) {
       // Create a secret to delete
       await page.getByTestId('add-secret-button').click()
-      await expect(page.getByTestId('secret-key-input')).toBeVisible()
+      await expect(page.getByTestId('secret-key-input')).toBeVisible({ timeout: 5000 })
       await page.getByTestId('secret-key-input').fill(deleteKey)
       await page.getByTestId('secret-value-input').fill('delete-me')
       await page.getByTestId('save-secret-button').click()
@@ -157,19 +157,20 @@ test.describe('Secrets Management', () => {
     // Select and delete - use .first() to select list item, not heading
     await page.getByText(deleteKey).first().click()
 
-    // Wait for detail view to load
-    await expect(page.getByTestId('delete-secret-button')).toBeVisible()
+    // Wait for detail view to load with explicit timeout
+    await expect(page.getByTestId('delete-secret-button')).toBeVisible({ timeout: 5000 })
 
-    // Handle confirmation dialog - set up auto-accept handler BEFORE clicking
-    // The dialog blocks the click, so we need to handle it inline
-    page.on('dialog', async (dialog) => {
-      await dialog.accept()
-    })
-
-    // Now click delete - the dialog will be auto-accepted
+    // Click delete button to open confirmation dialog
     await page.getByTestId('delete-secret-button').click()
 
-    // Wait for deletion to complete and verify secret is gone from the list
+    // Wait for custom confirm dialog to appear and click confirm
+    await expect(page.getByTestId('confirm-dialog')).toBeVisible({ timeout: 5000 })
+    await page.getByTestId('confirm-dialog-confirm').click()
+
+    // Wait for dialog to close and deletion to complete
+    await expect(page.getByTestId('confirm-dialog')).not.toBeVisible({ timeout: 5000 })
+
+    // Verify secret is gone from the list
     const secretsList = page.getByTestId('secrets-list')
     await expect(secretsList.getByText(deleteKey)).not.toBeVisible({ timeout: 5000 })
   })
@@ -187,7 +188,7 @@ test.describe('Secrets Management', () => {
         await page.getByTestId('add-secret-button').click()
 
         // Wait for form to be visible
-        await expect(page.getByTestId('secret-key-input')).toBeVisible()
+        await expect(page.getByTestId('secret-key-input')).toBeVisible({ timeout: 5000 })
         await page.getByTestId('secret-key-input').fill(key)
         await page.getByTestId('secret-value-input').fill(`value-${key}`)
         await page.getByTestId('save-secret-button').click()
