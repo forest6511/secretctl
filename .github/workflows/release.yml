@@ -42,7 +42,8 @@ jobs:
       - name: Run security scan
         run: |
           go install github.com/securego/gosec/v2/cmd/gosec@latest
-          gosec -severity high -confidence high ./...
+          # Exclude desktop/ as it requires Wails dependencies not available in this job
+          gosec -severity high -confidence high -exclude-dir=desktop ./...
 
       - name: Check vulnerabilities
         run: |
