@@ -40,7 +40,44 @@ go build -o secretctl ./cmd/secretctl
 
 ### Binary Releases
 
-Coming soon.
+Download the latest release from [GitHub Releases](https://github.com/forest6511/secretctl/releases).
+
+**CLI:**
+- `secretctl-linux-amd64` — Linux (x86_64)
+- `secretctl-linux-arm64` — Linux (ARM64)
+- `secretctl-darwin-amd64` — macOS (Intel)
+- `secretctl-darwin-arm64` — macOS (Apple Silicon)
+- `secretctl-windows-amd64.exe` — Windows (x86_64)
+
+**Desktop App:**
+- `secretctl-desktop-macos` — macOS (Universal)
+- `secretctl-desktop-linux` — Linux (AppImage)
+- `secretctl-desktop-windows.exe` — Windows (Installer)
+
+#### Verify Downloads
+
+```bash
+# Download checksums.txt and verify
+sha256sum -c checksums.txt
+```
+
+#### macOS: Gatekeeper Warning
+
+macOS may show a security warning for unsigned apps. To allow:
+
+```bash
+# Option 1: Remove quarantine attribute
+xattr -d com.apple.quarantine secretctl-darwin-arm64
+
+# Option 2: Right-click the app and select "Open"
+```
+
+#### Windows: SmartScreen Warning
+
+Windows SmartScreen may show a warning. To allow:
+
+1. Click "More info"
+2. Click "Run anyway"
 
 ## Quick Start
 
