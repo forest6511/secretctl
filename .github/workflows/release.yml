@@ -54,8 +54,8 @@ jobs:
       - name: Option D+ Check - No plaintext secret returns
         run: |
           set -euo pipefail
-          if grep -rn "secret_get\s*=" pkg/mcp/ 2>/dev/null | grep -v "masked\|Masked"; then
-            echo "FAIL: Plaintext secret getter found in pkg/mcp/"
+          if grep -rn "secret_get\s*=" internal/mcp/ 2>/dev/null | grep -v "masked\|Masked"; then
+            echo "FAIL: Plaintext secret getter found in internal/mcp/"
             exit 1
           fi
           echo "OK: No plaintext secret getters"
@@ -63,8 +63,8 @@ jobs:
       - name: Option D+ Check - Output sanitization
         run: |
           set -euo pipefail
-          if ! grep -rq "Sanitize\|sanitize\|REDACTED" pkg/mcp/ 2>/dev/null; then
-            echo "FAIL: No output sanitization found in pkg/mcp/"
+          if ! grep -rq "Sanitize\|sanitize\|REDACTED" internal/mcp/ 2>/dev/null; then
+            echo "FAIL: No output sanitization found in internal/mcp/"
             exit 1
           fi
           echo "OK: Output sanitization found"
@@ -72,8 +72,8 @@ jobs:
       - name: Option D+ Check - Audit logging
         run: |
           set -euo pipefail
-          if ! grep -rq "audit\.\|Audit\|AuditLog" pkg/mcp/ 2>/dev/null; then
-            echo "FAIL: No audit logging found in pkg/mcp/"
+          if ! grep -rq "audit\.\|Audit\|AuditLog" internal/mcp/ 2>/dev/null; then
+            echo "FAIL: No audit logging found in internal/mcp/"
             exit 1
           fi
           echo "OK: Audit logging found"
@@ -81,8 +81,8 @@ jobs:
       - name: Option D+ Check - Masked returns
         run: |
           set -euo pipefail
-          if ! grep -rq "Masked\|masked" pkg/mcp/ 2>/dev/null; then
-            echo "FAIL: No masked returns found in pkg/mcp/"
+          if ! grep -rq "Masked\|masked" internal/mcp/ 2>/dev/null; then
+            echo "FAIL: No masked returns found in internal/mcp/"
             exit 1
           fi
           echo "OK: Masked returns found"
