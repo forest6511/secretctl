@@ -243,13 +243,23 @@ jobs:
           path: dist/
         continue-on-error: true
 
+      - name: Package macOS app bundle
+        run: |
+          cd dist
+          # Zip macOS .app bundle if it exists
+          if [ -d "secretctl.app" ]; then
+            zip -r secretctl-desktop-macos.zip secretctl.app
+            rm -rf secretctl.app
+          fi
+
       - name: List artifacts
         run: ls -la dist/
 
       - name: Generate checksums
         run: |
           cd dist
-          sha256sum * > checksums.txt
+          # Only checksum files, not directories
+          find . -maxdepth 1 -type f ! -name checksums.txt -exec sha256sum {} \; | sed 's|./||' > checksums.txt
           echo "=== Checksums ==="
           cat checksums.txt
 
