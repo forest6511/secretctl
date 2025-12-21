@@ -47,15 +47,18 @@ test.describe('Audit Log Viewer', () => {
     await page.getByTestId('audit-button').click()
     await expect(page.getByTestId('audit-page')).toBeVisible({ timeout: 5000 })
 
-    // Verify table structure
-    await expect(page.getByTestId('audit-log-table')).toBeVisible()
+    // Verify table structure - wait for table to load
+    await expect(page.getByTestId('audit-log-table')).toBeVisible({ timeout: 10000 })
 
-    // Check table headers
-    await expect(page.getByText('Timestamp')).toBeVisible()
-    await expect(page.getByText('Action')).toBeVisible()
-    await expect(page.getByText('Source')).toBeVisible()
-    await expect(page.getByText('Key')).toBeVisible()
-    await expect(page.getByText('Status')).toBeVisible()
+    // Wait for table data to render before checking headers
+    await page.waitForTimeout(500)
+
+    // Check table headers with explicit timeout
+    await expect(page.getByText('Timestamp')).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText('Action')).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText('Source')).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText('Key')).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText('Status')).toBeVisible({ timeout: 5000 })
   })
 
   test('AUDIT-003: Chain integrity verification', async ({ page }) => {
