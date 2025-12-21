@@ -48,17 +48,19 @@ test.describe('Audit Log Viewer', () => {
     await expect(page.getByTestId('audit-page')).toBeVisible({ timeout: 5000 })
 
     // Verify table structure - wait for table to load
-    await expect(page.getByTestId('audit-log-table')).toBeVisible({ timeout: 10000 })
+    const table = page.getByTestId('audit-log-table')
+    await expect(table).toBeVisible({ timeout: 10000 })
 
-    // Wait for table data to render before checking headers
-    await page.waitForTimeout(500)
+    // Wait for table to fully render (not showing "Loading...")
+    await expect(table.getByText('Loading...')).not.toBeVisible({ timeout: 10000 })
 
-    // Check table headers with explicit timeout
-    await expect(page.getByText('Timestamp')).toBeVisible({ timeout: 5000 })
-    await expect(page.getByText('Action')).toBeVisible({ timeout: 5000 })
-    await expect(page.getByText('Source')).toBeVisible({ timeout: 5000 })
-    await expect(page.getByText('Key')).toBeVisible({ timeout: 5000 })
-    await expect(page.getByText('Status')).toBeVisible({ timeout: 5000 })
+    // Check table headers exist within the table (scope to avoid strict mode violations)
+    // Use locator chaining to ensure we're checking within the table element
+    await expect(table.locator('th', { hasText: 'Timestamp' })).toBeVisible({ timeout: 5000 })
+    await expect(table.locator('th', { hasText: 'Action' })).toBeVisible({ timeout: 5000 })
+    await expect(table.locator('th', { hasText: 'Source' })).toBeVisible({ timeout: 5000 })
+    await expect(table.locator('th', { hasText: 'Key' })).toBeVisible({ timeout: 5000 })
+    await expect(table.locator('th', { hasText: 'Status' })).toBeVisible({ timeout: 5000 })
   })
 
   test('AUDIT-003: Chain integrity verification', async ({ page }) => {

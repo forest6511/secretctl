@@ -160,24 +160,16 @@ test.describe('Secrets Management', () => {
     // Wait for detail view to load with explicit timeout
     await expect(page.getByTestId('delete-secret-button')).toBeVisible({ timeout: 5000 })
 
-    // Set up dialog handler BEFORE clicking delete button
-    // Use page.once to ensure handler is only called once and properly await
-    const dialogPromise = new Promise<void>((resolve) => {
-      page.once('dialog', async (dialog) => {
-        await dialog.accept()
-        resolve()
-      })
-    })
+    // Handle confirmation dialog - set up auto-accept handler BEFORE clicking
+    // Use page.on with a simple handler that does not block
+    page.on('dialog', dialog => dialog.accept())
 
-    // Click delete button
+    // Now click delete - the dialog will be auto-accepted
     await page.getByTestId('delete-secret-button').click()
-
-    // Wait for dialog to be handled
-    await dialogPromise
 
     // Wait for deletion to complete and verify secret is gone from the list
     const secretsList = page.getByTestId('secrets-list')
-    await expect(secretsList.getByText(deleteKey)).not.toBeVisible({ timeout: 10000 })
+    await expect(secretsList.getByText(deleteKey)).not.toBeVisible({ timeout: 5000 })
   })
 
   test('CORE-005: Secret list display and search', async ({ page }) => {
