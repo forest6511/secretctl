@@ -181,6 +181,25 @@ secretctl export --format=json -k "db/*" -o config.json
 secretctl export --format=json | jq '.DB_HOST'
 ```
 
+### Import Secrets
+
+Import secrets from existing `.env` or JSON files:
+
+```bash
+# Import from .env file
+secretctl import .env
+
+# Import from JSON file
+secretctl import config.json
+
+# Preview what would be imported (dry run)
+secretctl import .env --dry-run
+
+# Handle conflicts: skip, overwrite, or error
+secretctl import .env --on-conflict=skip
+secretctl import .env --on-conflict=overwrite
+```
+
 ### Generate Passwords
 
 Create secure random passwords:

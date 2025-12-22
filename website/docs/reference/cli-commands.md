@@ -250,6 +250,47 @@ secretctl export -f json | jq '.DB_HOST'
 
 ---
 
+## import
+
+Import secrets from `.env` or JSON files.
+
+```bash
+secretctl import [file] [flags]
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--on-conflict string` | How to handle existing keys: `skip`, `overwrite`, `error` (default: `error`) |
+| `--dry-run` | Preview what would be imported without making changes |
+
+**Examples:**
+
+```bash
+# Import from .env file
+secretctl import .env
+
+# Import from JSON file
+secretctl import config.json
+
+# Preview changes without importing
+secretctl import .env --dry-run
+
+# Skip existing keys
+secretctl import .env --on-conflict=skip
+
+# Overwrite existing keys
+secretctl import .env --on-conflict=overwrite
+```
+
+**Supported Formats:**
+
+- `.env` files: Standard KEY=VALUE format
+- JSON files: Object with key-value pairs `{"KEY": "value"}`
+
+---
+
 ## generate
 
 Generate cryptographically secure random passwords.
