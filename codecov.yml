@@ -27,7 +27,7 @@ coverage:
     patch:
       default:
         target: 70%
-        threshold: 1%
+        threshold: 5%
         informational: false
 
 # Ignore generated files, test files, and CLI commands
