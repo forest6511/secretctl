@@ -8,6 +8,8 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         'getting-started/index',
+        'getting-started/for-developers',
+        'getting-started/for-users',
         'getting-started/installation',
         'getting-started/quick-start',
         'getting-started/concepts',
