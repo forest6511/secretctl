@@ -28,14 +28,14 @@ sidebar_position: 1
 If you prefer the command line:
 
 ```bash
-# Install
-brew install forest6511/tap/secretctl
+# Download from GitHub Releases
+# https://github.com/forest6511/secretctl/releases
 
 # Initialize vault
 secretctl init
 
 # Add your first secret
-secretctl secret add api/openai --value "sk-..."
+echo "sk-..." | secretctl set OPENAI_API_KEY
 ```
 
 [Continue with CLI Guide →](/docs/guides/cli/)
@@ -58,8 +58,11 @@ If you want to use secretctl with Claude Code or other AI agents:
 {
   "mcpServers": {
     "secretctl": {
-      "command": "secretctl",
-      "args": ["mcp", "serve"]
+      "command": "/path/to/secretctl",
+      "args": ["mcp-server"],
+      "env": {
+        "SECRETCTL_PASSWORD": "your-master-password"
+      }
     }
   }
 }

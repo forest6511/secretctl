@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`import` command** - Import secrets from .env or JSON files (#91)
+  - Support for `.env` and JSON formats
+  - Conflict handling modes: `--skip`, `--overwrite`, `--error`
+  - Preview mode with `--dry-run`
+  - Import summary with counts
+
+### Fixed
+- **E2E test stability** - Resolved flaky tests AUDIT-002 and CORE-004 (#93)
+  - Fixed strict mode violations in audit table header checks
+  - Fixed custom ConfirmDialog interaction in delete tests
+  - Improved CI workflow timeout handling
+
 ## [0.5.0] - 2025-12-08
 
 ### Added
