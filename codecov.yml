@@ -30,12 +30,13 @@ coverage:
         threshold: 1%
         informational: false
 
-# Ignore generated files and test files
+# Ignore generated files, test files, and CLI commands
 ignore:
   - "**/*_test.go"
   - "**/mock_*.go"
   - "**/mocks/**"
   - "desktop/frontend/**"
+  - "cmd/secretctl/**"  # CLI commands tested via E2E, not unit tests
 
 # Comment configuration for PRs
 comment:
