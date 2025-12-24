@@ -1,0 +1,115 @@
+# GoReleaser configuration for secretctl
+# Documentation: https://goreleaser.com
+
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+
+builds:
+  # CLI binary
+  - id: secretctl
+    main: ./cmd/secretctl
+    binary: secretctl
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: cli-archives
+    formats:
+      - binary
+    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^ci:'
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: 'New Features'
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: 'Bug Fixes'
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: 'Security'
+      regexp: '^.*?sec(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: 'Other'
+      order: 999
+
+release:
+  github:
+    owner: forest6511
+    name: secretctl
+  draft: false
+  prerelease: auto
+  mode: replace
+  header: |
+    ## secretctl {{ .Tag }}
+
+    The simplest AI-ready secrets manager.
+
+    ### Installation
+
+    ```bash
+    # macOS (Apple Silicon)
+    curl -LO https://github.com/forest6511/secretctl/releases/download/{{ .Tag }}/secretctl-darwin-arm64
+    chmod +x secretctl-darwin-arm64
+    sudo mv secretctl-darwin-arm64 /usr/local/bin/secretctl
+
+    # macOS (Intel)
+    curl -LO https://github.com/forest6511/secretctl/releases/download/{{ .Tag }}/secretctl-darwin-amd64
+    chmod +x secretctl-darwin-amd64
+    sudo mv secretctl-darwin-amd64 /usr/local/bin/secretctl
+
+    # Linux (x86_64)
+    curl -LO https://github.com/forest6511/secretctl/releases/download/{{ .Tag }}/secretctl-linux-amd64
+    chmod +x secretctl-linux-amd64
+    sudo mv secretctl-linux-amd64 /usr/local/bin/secretctl
+    ```
+
+    ### Verify Download
+
+    ```bash
+    curl -LO https://github.com/forest6511/secretctl/releases/download/{{ .Tag }}/checksums.txt
+    sha256sum -c checksums.txt --ignore-missing
+    ```
+  footer: |
+    ---
+
+    **Full Changelog**: https://github.com/forest6511/secretctl/blob/main/CHANGELOG.md
+
+    **Documentation**: https://forest6511.github.io/secretctl/
+
+# Announce release (optional, disabled by default)
+# announce:
+#   discord:
+#     enabled: false
