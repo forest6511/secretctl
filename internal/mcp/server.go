@@ -85,7 +85,7 @@ func NewServer(opts *ServerOptions) (*Server, error) {
 	mcpServer := mcp.NewServer(
 		&mcp.Implementation{
 			Name:    "secretctl",
-			Version: "0.5.0",
+			Version: "0.6.0",
 		},
 		nil,
 	)
