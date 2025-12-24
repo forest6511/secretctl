@@ -8,8 +8,9 @@ import (
 	"io"
 	"os"
 
-	"github.com/forest6511/secretctl/pkg/crypto"
 	"golang.org/x/crypto/hkdf"
+
+	"github.com/forest6511/secretctl/pkg/crypto"
 )
 
 const (
@@ -39,8 +40,7 @@ func GenerateSalt() ([]byte, error) {
 }
 
 // DeriveBackupKeys derives encryption and MAC keys from a password and salt.
-// Returns (encryptionKey, macKey, error).
-func DeriveBackupKeys(password, salt []byte) ([]byte, []byte, error) {
+func DeriveBackupKeys(password, salt []byte) (encKey, macKey []byte, err error) {
 	if len(password) == 0 {
 		return nil, nil, ErrEmptyPassword
 	}
@@ -50,12 +50,12 @@ func DeriveBackupKeys(password, salt []byte) ([]byte, []byte, error) {
 	defer crypto.SecureWipe(masterKey)
 
 	// Use HKDF to derive separate encryption and MAC keys
-	encKey, err := deriveHKDF(masterKey, []byte(hkdfInfoEncryption))
+	encKey, err = deriveHKDF(masterKey, []byte(hkdfInfoEncryption))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to derive encryption key: %w", err)
 	}
 
-	macKey, err := deriveHKDF(masterKey, []byte(hkdfInfoMAC))
+	macKey, err = deriveHKDF(masterKey, []byte(hkdfInfoMAC))
 	if err != nil {
 		crypto.SecureWipe(encKey)
 		return nil, nil, fmt.Errorf("failed to derive MAC key: %w", err)

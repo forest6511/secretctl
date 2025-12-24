@@ -5,9 +5,10 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/forest6511/secretctl/pkg/backup"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
+
+	"github.com/forest6511/secretctl/pkg/backup"
 )
 
 var (
@@ -112,9 +113,9 @@ func executeRestore(cmd *cobra.Command, args []string) error {
 	if !restoreForce && !restoreDryRun {
 		fmt.Print("This will restore the vault from backup. Continue? [y/N]: ")
 		var confirm string
-		fmt.Scanln(&confirm)
+		_, _ = fmt.Scanln(&confirm)
 		if confirm != "y" && confirm != "Y" {
-			fmt.Println("Restore cancelled.")
+			fmt.Println("Restore canceled.")
 			return nil
 		}
 	}

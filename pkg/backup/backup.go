@@ -341,7 +341,7 @@ func verifyAndDecrypt(data []byte, password []byte, keyFile string) (*Header, *P
 	}
 
 	// Get current position (after header)
-	headerEnd := len(data) - int(reader.Len())
+	headerEnd := len(data) - reader.Len()
 
 	// Read ciphertext length
 	var ciphertextLen uint32
@@ -370,7 +370,8 @@ func verifyAndDecrypt(data []byte, password []byte, keyFile string) (*Header, *P
 	// Derive keys
 	var encKey, macKey []byte
 
-	if keyFile != "" {
+	switch {
+	case keyFile != "":
 		encKey, err = ReadKeyFile(keyFile)
 		if err != nil {
 			return nil, nil, err
@@ -382,7 +383,7 @@ func verifyAndDecrypt(data []byte, password []byte, keyFile string) (*Header, *P
 			return nil, nil, fmt.Errorf("failed to derive MAC key: %w", err)
 		}
 		defer crypto.SecureWipe(macKey)
-	} else if header.EncryptionMode == EncryptionModeMaster && header.KDFParams != nil {
+	case header.EncryptionMode == EncryptionModeMaster && header.KDFParams != nil:
 		if password == nil {
 			return nil, nil, ErrEmptyPassword
 		}
@@ -392,7 +393,7 @@ func verifyAndDecrypt(data []byte, password []byte, keyFile string) (*Header, *P
 		}
 		defer crypto.SecureWipe(encKey)
 		defer crypto.SecureWipe(macKey)
-	} else {
+	default:
 		return nil, nil, fmt.Errorf("cannot determine decryption key")
 	}
 

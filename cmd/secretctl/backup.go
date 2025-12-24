@@ -5,9 +5,10 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/forest6511/secretctl/pkg/backup"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
+
+	"github.com/forest6511/secretctl/pkg/backup"
 )
 
 var (
