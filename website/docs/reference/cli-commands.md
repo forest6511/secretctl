@@ -427,6 +427,92 @@ secretctl audit prune --older-than=12m --force
 
 ---
 
+## backup
+
+Create an encrypted backup of the vault.
+
+```bash
+secretctl backup [flags]
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `-o, --output string` | Output file path (required unless using `--stdout`) |
+| `--stdout` | Output to stdout (for piping) |
+| `--with-audit` | Include audit logs in backup |
+| `--backup-password` | Use a separate backup password (prompted) |
+| `--key-file string` | Encryption key file (32 bytes) |
+| `-f, --force` | Overwrite existing file without confirmation |
+
+**Examples:**
+
+```bash
+# Basic backup
+secretctl backup -o vault-backup.enc
+
+# Backup with audit logs
+secretctl backup -o full-backup.enc --with-audit
+
+# Backup to stdout (for piping to gpg, etc.)
+secretctl backup --stdout | gpg --encrypt > backup.gpg
+
+# Use separate backup password
+secretctl backup -o backup.enc --backup-password
+
+# Use key file for automation
+secretctl backup -o backup.enc --key-file=backup.key
+
+# Overwrite existing backup
+secretctl backup -o backup.enc --force
+```
+
+---
+
+## restore
+
+Restore the vault from an encrypted backup.
+
+```bash
+secretctl restore <backup-file> [flags]
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--dry-run` | Preview what would be restored without making changes |
+| `--verify-only` | Only verify backup integrity (no restore) |
+| `--on-conflict string` | How to handle existing keys: `skip`, `overwrite`, `error` (default: `error`) |
+| `--key-file string` | Decryption key file |
+| `--with-audit` | Restore audit logs (overwrites existing) |
+| `-f, --force` | Skip confirmation prompt |
+
+**Examples:**
+
+```bash
+# Verify backup integrity
+secretctl restore backup.enc --verify-only
+
+# Preview restore without changes
+secretctl restore backup.enc --dry-run
+
+# Restore, skip existing keys
+secretctl restore backup.enc --on-conflict=skip
+
+# Restore, overwrite existing keys
+secretctl restore backup.enc --on-conflict=overwrite
+
+# Restore with audit logs
+secretctl restore backup.enc --with-audit
+
+# Use key file for decryption
+secretctl restore backup.enc --key-file=backup.key
+```
+
+---
+
 ## mcp-server
 
 Start the MCP server for AI coding assistant integration.
