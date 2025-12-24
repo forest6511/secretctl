@@ -110,6 +110,77 @@ Output sanitization uses exact string matching. It does **not** detect:
 - Hex-encoded secrets
 - Partial string matches
 
+## Threat Categories
+
+secretctl's Option D+ design protects against these threat categories:
+
+### 1. Direct Secret Exposure
+
+| Threat | Protection | Status |
+|--------|------------|--------|
+| AI requests plaintext secret | No `secret_get` tool exists | ✅ Mitigated |
+| AI extracts from command output | Output sanitization | ✅ Mitigated |
+| AI infers from partial data | Fixed-length masking (`****WXYZ`) | ✅ Mitigated |
+
+### 2. Prompt Injection Attacks
+
+| Threat | Protection | Status |
+|--------|------------|--------|
+| Malicious prompt requests secrets | Tool-level restrictions | ✅ Mitigated |
+| Injected command in `secret_run` | Command allowlist policy | ✅ Mitigated |
+| Encoded secret extraction | Base64/Hex sanitization | ⚠️ Partial |
+
+### 3. Command Execution Risks
+
+| Threat | Protection | Status |
+|--------|------------|--------|
+| Environment variable dump | `env`/`printenv`/`set` blocked | ✅ Mitigated |
+| Shell escape sequences | Command validation | ✅ Mitigated |
+| Timeout/resource exhaustion | 300s timeout, resource limits | ✅ Mitigated |
+| Arbitrary command execution | Deny-by-default policy | ✅ Mitigated |
+
+### 4. Indirect Disclosure
+
+| Threat | Protection | Status |
+|--------|------------|--------|
+| Timing attacks | Not applicable (local only) | N/A |
+| Side-channel via output length | Fixed masking format | ✅ Mitigated |
+| Model training data leakage | No plaintext to AI | ✅ Mitigated |
+
+## Sanitization Details
+
+### What IS Detected
+
+| Pattern | Example | Replacement |
+|---------|---------|-------------|
+| Exact match | `AKIAIOSFODNN7EXAMPLE` | `[REDACTED:aws/key]` |
+| Base64 encoded | `QUtJQUlPU0ZPRE5ON0VYQU1QTEU=` | `[REDACTED:aws/key:base64]` |
+| In JSON output | `{"key": "secret123"}` | `{"key": "[REDACTED:api/key]"}` |
+| In URLs | `https://api.example.com?token=abc123` | `[REDACTED:api/token]` |
+
+### What is NOT Detected
+
+⚠️ **Known Limitations:**
+
+| Pattern | Example | Why Not Detected |
+|---------|---------|------------------|
+| Hex encoding | `414b494149...` | Not implemented |
+| URL encoding | `%41%4B%49%41...` | Not implemented |
+| Partial matches | First 10 chars of secret | Only exact match |
+| Case variations | `SECRET123` vs `secret123` | Case-sensitive match |
+| Split output | `SEC` + `RET123` (across lines) | Single-pass detection |
+| Compressed data | gzip/deflate encoded | Binary not scanned |
+
+### Sanitization Timing
+
+```
+Command executes → stdout/stderr captured → Sanitization runs → Result to AI
+                                                    ↑
+                                           All secret values checked
+```
+
+**Important**: Sanitization happens **after** command completion. Secrets are exposed to the subprocess but never returned to the AI.
+
 ## Best Practices
 
 1. **Use strong master password** - The MCP server requires your master password
@@ -118,3 +189,5 @@ Output sanitization uses exact string matching. It does **not** detect:
 4. **Use key prefixes** - Organize secrets with prefixes (e.g., `aws/`, `db/`)
 5. **Set expirations** - Use `--expires` when setting sensitive secrets
 6. **Monitor audit logs** - Check `secretctl audit list` for unusual activity
+7. **Avoid encoding secrets** - Don't store base64/hex encoded values as secrets
+8. **Use short-lived tokens** - Prefer tokens with expiration over long-lived credentials
