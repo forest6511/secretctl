@@ -426,10 +426,10 @@ func processImport(secrets map[string]string) error {
 		exists := existingKeys[key]
 		action, errMsg := handleConflict(key, exists)
 		switch action {
-		case "skip":
+		case conflictSkip:
 			skipped++
 			continue
-		case "error":
+		case conflictError:
 			errs = append(errs, errMsg)
 			conflicts++
 			continue
@@ -492,9 +492,9 @@ func handleConflict(key string, exists bool) (action string, errMsg string) {
 	switch importConflict {
 	case conflictSkip:
 		fmt.Printf("Skipped (exists): %s\n", key)
-		return "skip", ""
+		return conflictSkip, ""
 	case conflictError:
-		return "error", fmt.Sprintf("key already exists: %s", key)
+		return conflictError, fmt.Sprintf("key already exists: %s", key)
 	default:
 		return "import", ""
 	}
