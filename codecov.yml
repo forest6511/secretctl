@@ -13,7 +13,7 @@ coverage:
       crypto:
         paths:
           - "pkg/crypto/**"
-        target: 80%
+        target: 90%
         threshold: 2%
         informational: true
       # Critical package: vault (informational until coverage improves)
