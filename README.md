@@ -215,6 +215,34 @@ secretctl generate -l 32 --no-symbols
 secretctl generate -n 5
 ```
 
+### Backup and Restore
+
+Create encrypted backups and restore your vault:
+
+```bash
+# Create encrypted backup
+secretctl backup -o vault-backup.enc
+
+# Create backup with audit logs
+secretctl backup -o full-backup.enc --with-audit
+
+# Verify backup integrity
+secretctl restore vault-backup.enc --verify-only
+
+# Restore to a new vault (dry run first)
+secretctl restore vault-backup.enc --dry-run
+
+# Restore with conflict handling
+secretctl restore vault-backup.enc --on-conflict=skip    # Skip existing keys
+secretctl restore vault-backup.enc --on-conflict=overwrite  # Overwrite existing
+
+# Use key file instead of password (for automation)
+secretctl backup -o backup.enc --key-file=backup.key
+secretctl restore backup.enc --key-file=backup.key
+```
+
+> **Security**: Backups are encrypted with AES-256-GCM using a fresh salt. The HMAC-SHA256 integrity check detects any tampering.
+
 ### Audit Log
 
 ```bash

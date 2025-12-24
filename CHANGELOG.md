@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`backup` command** - Create encrypted vault backups (#83)
+  - AES-256-GCM encryption with fresh salt per backup
+  - HMAC-SHA256 integrity verification
+  - Optional audit log inclusion (`--with-audit`)
+  - Key file support for automation (`--key-file`)
+  - Stdout output for piping (`--stdout`)
+- **`restore` command** - Restore vault from encrypted backup (#83)
+  - Integrity verification (`--verify-only`)
+  - Dry run mode (`--dry-run`)
+  - Conflict handling: skip, overwrite, error
+  - Atomic restore prevents partial states
 - **`import` command** - Import secrets from .env or JSON files (#91)
   - Support for `.env` and JSON formats
   - Conflict handling modes: `--skip`, `--overwrite`, `--error`
