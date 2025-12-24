@@ -31,10 +31,9 @@ const sidebars: SidebarsConfig = {
           label: 'CLI Guide',
           items: [
             'guides/cli/index',
-            'guides/cli/managing-secrets',
             'guides/cli/running-commands',
-            'guides/cli/exporting-secrets',
             'guides/cli/password-generation',
+            'guides/cli/backup-restore',
           ],
         },
         {
@@ -42,7 +41,6 @@ const sidebars: SidebarsConfig = {
           label: 'Desktop App',
           items: [
             'guides/desktop/index',
-            'guides/desktop/managing-secrets',
             'guides/desktop/keyboard-shortcuts',
             'guides/desktop/audit-logs',
           ],
@@ -84,6 +82,13 @@ const sidebars: SidebarsConfig = {
         'security/index',
         'security/how-it-works',
         'security/encryption',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Architecture',
+      items: [
+        'architecture/index',
       ],
     },
     {
