@@ -46,16 +46,6 @@ You're trying to use secretctl before creating a vault.
 secretctl init
 ```
 
-### "vault is locked"
-
-The vault needs to be unlocked before use.
-
-**Solution:**
-
-```bash
-secretctl unlock
-```
-
 ### "failed to unlock vault: invalid password"
 
 The password you entered is incorrect.
@@ -142,7 +132,6 @@ The server is taking too long to start.
 
 2. Check for vault issues:
    ```bash
-   secretctl unlock
    secretctl list
    ```
 
