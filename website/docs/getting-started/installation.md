@@ -54,22 +54,21 @@ sudo mv secretctl /usr/local/bin/
 ## Verify Installation
 
 ```bash
-secretctl version
+secretctl --help
 ```
 
-Expected output:
-
-```
-secretctl version 1.0.0
-```
+You should see the list of available commands.
 
 ## Desktop App
 
-The desktop app is available for macOS, Linux, and Windows:
+The desktop app provides a GUI alternative to the CLI. Currently, you need to build it from source:
 
-1. Download from [GitHub Releases](https://github.com/forest6511/secretctl/releases)
-2. Install the appropriate package for your platform
-3. Launch the app
+```bash
+cd desktop
+wails build
+```
+
+See [Desktop App Guide](/docs/guides/desktop) for details.
 
 ## Next Steps
 

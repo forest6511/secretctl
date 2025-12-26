@@ -128,7 +128,7 @@ secretctl's Option D+ design protects against these threat categories:
 |--------|------------|--------|
 | Malicious prompt requests secrets | Tool-level restrictions | ✅ Mitigated |
 | Injected command in `secret_run` | Command allowlist policy | ✅ Mitigated |
-| Encoded secret extraction | Base64/Hex sanitization | ⚠️ Partial |
+| Encoded secret extraction | Not detected (see limitations) | ⚠️ Not Mitigated |
 
 ### 3. Command Execution Risks
 
@@ -149,12 +149,13 @@ secretctl's Option D+ design protects against these threat categories:
 
 ## Sanitization Details
 
+Sanitization uses **exact string matching** to replace secret values in command output.
+
 ### What IS Detected
 
 | Pattern | Example | Replacement |
 |---------|---------|-------------|
 | Exact match | `AKIAIOSFODNN7EXAMPLE` | `[REDACTED:aws/key]` |
-| Base64 encoded | `QUtJQUlPU0ZPRE5ON0VYQU1QTEU=` | `[REDACTED:aws/key:base64]` |
 | In JSON output | `{"key": "secret123"}` | `{"key": "[REDACTED:api/key]"}` |
 | In URLs | `https://api.example.com?token=abc123` | `[REDACTED:api/token]` |
 
@@ -164,8 +165,9 @@ secretctl's Option D+ design protects against these threat categories:
 
 | Pattern | Example | Why Not Detected |
 |---------|---------|------------------|
-| Hex encoding | `414b494149...` | Not implemented |
-| URL encoding | `%41%4B%49%41...` | Not implemented |
+| Base64 encoding | `QUtJQUlPU0ZPRE5ON0VYQU1QTEU=` | Only exact match |
+| Hex encoding | `414b494149...` | Only exact match |
+| URL encoding | `%41%4B%49%41...` | Only exact match |
 | Partial matches | First 10 chars of secret | Only exact match |
 | Case variations | `SECRET123` vs `secret123` | Case-sensitive match |
 | Split output | `SEC` + `RET123` (across lines) | Single-pass detection |

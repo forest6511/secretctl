@@ -24,29 +24,27 @@ This guide is for users who want a simple, secure way to manage passwords, API k
 
 ## Option 1: Desktop App (Recommended)
 
-### Step 1: Download
+### Build from Source
 
-1. Go to [GitHub Releases](https://github.com/forest6511/secretctl/releases)
-2. Download the file for your system:
-   - **macOS**: `secretctl-desktop-macos.zip`
-   - **Windows**: `secretctl-desktop-windows.exe`
-   - **Linux**: `secretctl-desktop-linux`
+The desktop app is currently available by building from source. Pre-built binaries will be available in future releases.
 
-### Step 2: Install
+**Requirements**:
+- [Go 1.24+](https://go.dev/dl/)
+- [Node.js 18+](https://nodejs.org/)
+- [Wails v2](https://wails.io/docs/gettingstarted/installation)
 
-**macOS**:
-1. Unzip the downloaded file
-2. Drag the app to your Applications folder
-3. Right-click and select "Open" (first time only, to bypass Gatekeeper)
+**Build Steps**:
 
-**Windows**:
-1. Run the installer
-2. Follow the installation wizard
-3. Launch from Start Menu
+```bash
+# Clone the repository
+git clone https://github.com/forest6511/secretctl.git
+cd secretctl/desktop
 
-**Linux**:
-1. Make executable: `chmod +x secretctl-desktop-linux`
-2. Run: `./secretctl-desktop-linux`
+# Build the app
+wails build
+```
+
+The compiled app will be in `desktop/build/bin/`.
 
 ### Step 3: Create Your Vault
 

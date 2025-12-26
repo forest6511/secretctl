@@ -39,7 +39,7 @@ Add to your Claude Code configuration (`~/.claude.json`):
   "mcpServers": {
     "secretctl": {
       "command": "secretctl",
-      "args": ["mcp", "serve"],
+      "args": ["mcp-server"],
       "env": {
         "SECRETCTL_PASSWORD": "your-master-password"
       }

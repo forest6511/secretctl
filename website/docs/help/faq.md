@@ -164,3 +164,22 @@ secretctl init
 ### Audit log shows "chain broken" warning
 
 This indicates the audit log may have been tampered with. While secrets remain secure, you should investigate the cause.
+
+## Roadmap
+
+### What features are planned?
+
+**Phase 2.5 (Multi-Field Secrets)** - Planned for a future release:
+- Store multiple fields per secret (e.g., username + password + host)
+- Pre-defined templates for common secret types (database, API, SSH)
+- Field-level sensitivity control for MCP integration
+
+This feature is not yet implemented. Currently, each secret stores a single value. For complex credentials, you can use key prefixes to group related secrets:
+
+```bash
+echo "db.example.com" | secretctl set db/prod/host
+echo "myuser" | secretctl set db/prod/user
+echo "secret123" | secretctl set db/prod/password
+```
+
+See the [project roadmap](https://github.com/forest6511/secretctl) for the latest development status.

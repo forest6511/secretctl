@@ -552,26 +552,3 @@ allowed_commands:
 ```
 
 See [MCP Integration Guide](/docs/guides/mcp/) for detailed configuration.
-
----
-
-## completion
-
-Generate shell autocompletion scripts.
-
-```bash
-secretctl completion [bash|zsh|fish|powershell]
-```
-
-**Examples:**
-
-```bash
-# Bash
-secretctl completion bash > /etc/bash_completion.d/secretctl
-
-# Zsh
-secretctl completion zsh > "${fpath[1]}/_secretctl"
-
-# Fish
-secretctl completion fish > ~/.config/fish/completions/secretctl.fish
-```

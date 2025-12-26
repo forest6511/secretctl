@@ -17,7 +17,7 @@ List all secret keys with metadata. Does **not** return secret values.
 ```json
 {
   "tag": "optional tag filter",
-  "prefix": "optional key prefix filter"
+  "expiring_within": "optional expiration filter (e.g., '7d', '30d')"
 }
 ```
 
@@ -35,8 +35,7 @@ List all secret keys with metadata. Does **not** return secret values.
       "created_at": "2025-01-01T00:00:00Z",
       "updated_at": "2025-06-15T10:30:00Z"
     }
-  ],
-  "total": 1
+  ]
 }
 ```
 

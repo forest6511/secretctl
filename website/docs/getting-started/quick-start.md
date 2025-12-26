@@ -23,13 +23,19 @@ Remember your master password! It cannot be recovered if lost.
 ## 2. Add Your First Secret
 
 ```bash
-secretctl secret add api/openai --value "sk-your-api-key"
+echo "sk-your-api-key" | secretctl set api/openai
+```
+
+Or interactively (prompts for value):
+
+```bash
+secretctl set api/openai
 ```
 
 ## 3. Retrieve a Secret
 
 ```bash
-secretctl secret get api/openai
+secretctl get api/openai
 ```
 
 ## 4. Use Secrets in Commands
