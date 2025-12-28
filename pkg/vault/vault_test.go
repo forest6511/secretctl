@@ -689,8 +689,9 @@ func TestValueTooLarge(t *testing.T) {
 	if err == nil {
 		t.Error("SetSecret with too large value should fail")
 	}
-	if !containsError(err, ErrValueTooLarge) {
-		t.Errorf("expected ErrValueTooLarge, got %v", err)
+	// Since Phase 2.5, value is converted to Fields["value"], so we get ErrFieldValueTooLarge
+	if !containsError(err, ErrFieldValueTooLarge) {
+		t.Errorf("expected ErrFieldValueTooLarge, got %v", err)
 	}
 }
 
@@ -1648,5 +1649,439 @@ func TestListExpiringSecretsNoValueDecryption(t *testing.T) {
 	// Verify expiration is populated
 	if entries[0].ExpiresAt == nil {
 		t.Error("expected ExpiresAt to be populated")
+	}
+}
+
+// Multi-field secret tests (Phase 2.5)
+
+func TestMultiFieldSecretSetGet(t *testing.T) {
+	tmpDir := t.TempDir()
+	v := New(tmpDir)
+	password := "testpassword123"
+
+	if err := v.Init(password); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := v.Unlock(password); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+	defer v.Lock()
+
+	// Set secret with multiple fields
+	key := "db/production"
+	entry := &SecretEntry{
+		Fields: map[string]Field{
+			"username": {Value: "admin", Sensitive: false},
+			"password": {Value: "super-secret-123", Sensitive: true, Aliases: []string{"pwd", "pass"}},
+			"host":     {Value: "db.example.com", Sensitive: false},
+			"port":     {Value: "5432", Sensitive: false, Kind: "port"},
+		},
+		Bindings: map[string]string{
+			"DB_USER": "username",
+			"DB_PASS": "password",
+			"DB_HOST": "host",
+			"DB_PORT": "port",
+		},
+	}
+
+	if err := v.SetSecret(key, entry); err != nil {
+		t.Fatalf("SetSecret failed: %v", err)
+	}
+
+	// Get and verify
+	retrieved, err := v.GetSecret(key)
+	if err != nil {
+		t.Fatalf("GetSecret failed: %v", err)
+	}
+
+	// Verify fields
+	if len(retrieved.Fields) != 4 {
+		t.Errorf("expected 4 fields, got %d", len(retrieved.Fields))
+	}
+
+	if retrieved.Fields["username"].Value != "admin" {
+		t.Errorf("username value mismatch: got %q", retrieved.Fields["username"].Value)
+	}
+	if retrieved.Fields["password"].Value != "super-secret-123" {
+		t.Errorf("password value mismatch: got %q", retrieved.Fields["password"].Value)
+	}
+	if !retrieved.Fields["password"].Sensitive {
+		t.Error("password should be sensitive")
+	}
+	if len(retrieved.Fields["password"].Aliases) != 2 {
+		t.Errorf("expected 2 aliases, got %d", len(retrieved.Fields["password"].Aliases))
+	}
+	if retrieved.Fields["port"].Kind != "port" {
+		t.Errorf("port kind mismatch: got %q", retrieved.Fields["port"].Kind)
+	}
+
+	// Verify bindings
+	if len(retrieved.Bindings) != 4 {
+		t.Errorf("expected 4 bindings, got %d", len(retrieved.Bindings))
+	}
+	if retrieved.Bindings["DB_USER"] != "username" {
+		t.Errorf("DB_USER binding mismatch: got %q", retrieved.Bindings["DB_USER"])
+	}
+}
+
+func TestMultiFieldSecretUpdate(t *testing.T) {
+	tmpDir := t.TempDir()
+	v := New(tmpDir)
+	password := "testpassword123"
+
+	if err := v.Init(password); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := v.Unlock(password); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+	defer v.Lock()
+
+	key := "api/service"
+
+	// Initial secret
+	entry1 := &SecretEntry{
+		Fields: map[string]Field{
+			"api_key": {Value: "key-v1", Sensitive: true},
+		},
+	}
+	if err := v.SetSecret(key, entry1); err != nil {
+		t.Fatalf("SetSecret failed: %v", err)
+	}
+
+	// Update with new fields
+	entry2 := &SecretEntry{
+		Fields: map[string]Field{
+			"api_key":    {Value: "key-v2", Sensitive: true},
+			"api_secret": {Value: "secret-v2", Sensitive: true},
+		},
+		Bindings: map[string]string{
+			"API_KEY":    "api_key",
+			"API_SECRET": "api_secret",
+		},
+	}
+	if err := v.SetSecret(key, entry2); err != nil {
+		t.Fatalf("SetSecret update failed: %v", err)
+	}
+
+	// Verify update
+	retrieved, err := v.GetSecret(key)
+	if err != nil {
+		t.Fatalf("GetSecret failed: %v", err)
+	}
+
+	if len(retrieved.Fields) != 2 {
+		t.Errorf("expected 2 fields after update, got %d", len(retrieved.Fields))
+	}
+	if retrieved.Fields["api_key"].Value != "key-v2" {
+		t.Errorf("api_key not updated: got %q", retrieved.Fields["api_key"].Value)
+	}
+	if retrieved.Fields["api_secret"].Value != "secret-v2" {
+		t.Errorf("api_secret missing: got %q", retrieved.Fields["api_secret"].Value)
+	}
+	if len(retrieved.Bindings) != 2 {
+		t.Errorf("expected 2 bindings after update, got %d", len(retrieved.Bindings))
+	}
+}
+
+func TestLegacyToMultiFieldConversion(t *testing.T) {
+	tmpDir := t.TempDir()
+	v := New(tmpDir)
+	password := "testpassword123"
+
+	if err := v.Init(password); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := v.Unlock(password); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+	defer v.Lock()
+
+	// Set secret using legacy Value field
+	key := "legacy/secret"
+	legacyValue := []byte("legacy-secret-value")
+	entry := &SecretEntry{Value: legacyValue}
+
+	if err := v.SetSecret(key, entry); err != nil {
+		t.Fatalf("SetSecret failed: %v", err)
+	}
+
+	// Get and verify Fields is populated via auto-conversion
+	retrieved, err := v.GetSecret(key)
+	if err != nil {
+		t.Fatalf("GetSecret failed: %v", err)
+	}
+
+	// Legacy Value should still work
+	if string(retrieved.Value) != string(legacyValue) {
+		t.Errorf("legacy Value mismatch: got %q, want %q", string(retrieved.Value), string(legacyValue))
+	}
+
+	// Fields should also be populated
+	if len(retrieved.Fields) != 1 {
+		t.Errorf("expected 1 field from auto-conversion, got %d", len(retrieved.Fields))
+	}
+
+	field, ok := retrieved.Fields[DefaultFieldName]
+	if !ok {
+		t.Fatalf("missing %q field from auto-conversion", DefaultFieldName)
+	}
+	if field.Value != string(legacyValue) {
+		t.Errorf("default field value mismatch: got %q", field.Value)
+	}
+	if !field.Sensitive {
+		t.Error("default field should be sensitive")
+	}
+}
+
+func TestMultiFieldValidationErrors(t *testing.T) {
+	tmpDir := t.TempDir()
+	v := New(tmpDir)
+	password := "testpassword123"
+
+	if err := v.Init(password); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := v.Unlock(password); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+	defer v.Lock()
+
+	tests := []struct {
+		name    string
+		entry   *SecretEntry
+		wantErr error
+	}{
+		{
+			name: "invalid field name",
+			entry: &SecretEntry{
+				Fields: map[string]Field{
+					"Invalid-Name": {Value: "test"},
+				},
+			},
+			wantErr: ErrFieldNameInvalid,
+		},
+		{
+			name: "alias conflict with field",
+			entry: &SecretEntry{
+				Fields: map[string]Field{
+					"password": {Value: "secret", Aliases: []string{"username"}},
+					"username": {Value: "admin"},
+				},
+			},
+			wantErr: ErrAliasConflict,
+		},
+		{
+			name: "binding references non-existent field",
+			entry: &SecretEntry{
+				Fields: map[string]Field{
+					"password": {Value: "secret"},
+				},
+				Bindings: map[string]string{
+					"DB_HOST": "hostname",
+				},
+			},
+			wantErr: ErrBindingFieldNotFound,
+		},
+	}
+
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Use numeric key to avoid key validation issues
+			key := "test/validation" + string(rune('0'+i))
+			err := v.SetSecret(key, tt.entry)
+			if err == nil {
+				t.Error("expected error, got nil")
+				return
+			}
+			if !containsError(err, tt.wantErr) {
+				t.Errorf("expected %v, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestMultiFieldWithMetadata(t *testing.T) {
+	tmpDir := t.TempDir()
+	v := New(tmpDir)
+	password := "testpassword123"
+
+	if err := v.Init(password); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := v.Unlock(password); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+	defer v.Lock()
+
+	// Set secret with fields, bindings, metadata, and tags
+	key := "service/config"
+	expiresAt := time.Now().Add(24 * time.Hour)
+	entry := &SecretEntry{
+		Fields: map[string]Field{
+			"api_key":    {Value: "key123", Sensitive: true, Hint: "API key for external service"},
+			"api_secret": {Value: "secret456", Sensitive: true},
+			"endpoint":   {Value: "https://api.example.com", Sensitive: false},
+		},
+		Bindings: map[string]string{
+			"SERVICE_KEY":    "api_key",
+			"SERVICE_SECRET": "api_secret",
+			"SERVICE_URL":    "endpoint",
+		},
+		Metadata: &SecretMetadata{
+			Notes: "Production service credentials",
+		},
+		Tags:      []string{"production", "api"},
+		ExpiresAt: &expiresAt,
+	}
+
+	if err := v.SetSecret(key, entry); err != nil {
+		t.Fatalf("SetSecret failed: %v", err)
+	}
+
+	// Verify all data persisted
+	retrieved, err := v.GetSecret(key)
+	if err != nil {
+		t.Fatalf("GetSecret failed: %v", err)
+	}
+
+	// Fields
+	if len(retrieved.Fields) != 3 {
+		t.Errorf("expected 3 fields, got %d", len(retrieved.Fields))
+	}
+	if retrieved.Fields["api_key"].Hint != "API key for external service" {
+		t.Errorf("hint not preserved: got %q", retrieved.Fields["api_key"].Hint)
+	}
+
+	// Bindings
+	if len(retrieved.Bindings) != 3 {
+		t.Errorf("expected 3 bindings, got %d", len(retrieved.Bindings))
+	}
+
+	// Metadata
+	if retrieved.Metadata == nil {
+		t.Fatal("metadata is nil")
+	}
+	if retrieved.Metadata.Notes != "Production service credentials" {
+		t.Errorf("notes mismatch: got %q", retrieved.Metadata.Notes)
+	}
+
+	// Tags
+	if len(retrieved.Tags) != 2 {
+		t.Errorf("expected 2 tags, got %d", len(retrieved.Tags))
+	}
+
+	// Expiration
+	if retrieved.ExpiresAt == nil {
+		t.Error("ExpiresAt is nil")
+	}
+}
+
+func TestIsSingleFieldSecretIntegration(t *testing.T) {
+	tmpDir := t.TempDir()
+	v := New(tmpDir)
+	password := "testpassword123"
+
+	if err := v.Init(password); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := v.Unlock(password); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+	defer v.Lock()
+
+	// Legacy-style secret
+	legacyKey := "legacy"
+	if err := v.SetSecret(legacyKey, &SecretEntry{Value: []byte("secret")}); err != nil {
+		t.Fatalf("SetSecret legacy failed: %v", err)
+	}
+
+	// Multi-field secret
+	multiKey := "multi"
+	if err := v.SetSecret(multiKey, &SecretEntry{
+		Fields: map[string]Field{
+			"username": {Value: "admin"},
+			"password": {Value: "secret"},
+		},
+	}); err != nil {
+		t.Fatalf("SetSecret multi failed: %v", err)
+	}
+
+	// Check legacy
+	legacyEntry, _ := v.GetSecret(legacyKey)
+	if !IsSingleFieldSecret(legacyEntry.Fields) {
+		t.Error("legacy secret should be single-field")
+	}
+
+	// Check multi
+	multiEntry, _ := v.GetSecret(multiKey)
+	if IsSingleFieldSecret(multiEntry.Fields) {
+		t.Error("multi-field secret should not be single-field")
+	}
+}
+
+func TestResolveFieldNameIntegration(t *testing.T) {
+	tmpDir := t.TempDir()
+	v := New(tmpDir)
+	password := "testpassword123"
+
+	if err := v.Init(password); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := v.Unlock(password); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+	defer v.Lock()
+
+	// Set secret with aliases
+	key := "db/creds"
+	if err := v.SetSecret(key, &SecretEntry{
+		Fields: map[string]Field{
+			"password": {
+				Value:     "super-secret",
+				Sensitive: true,
+				Aliases:   []string{"pwd", "pass"},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SetSecret failed: %v", err)
+	}
+
+	entry, err := v.GetSecret(key)
+	if err != nil {
+		t.Fatalf("GetSecret failed: %v", err)
+	}
+
+	// Test alias resolution
+	tests := []struct {
+		lookupName    string
+		wantFieldName string
+		wantValue     string
+	}{
+		{"password", "password", "super-secret"},
+		{"pwd", "password", "super-secret"},
+		{"pass", "password", "super-secret"},
+		{"PWD", "password", "super-secret"}, // case-insensitive
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.lookupName, func(t *testing.T) {
+			name, field, err := ResolveFieldName(entry.Fields, tt.lookupName)
+			if err != nil {
+				t.Fatalf("ResolveFieldName(%q) error: %v", tt.lookupName, err)
+			}
+			if name != tt.wantFieldName {
+				t.Errorf("field name = %q, want %q", name, tt.wantFieldName)
+			}
+			if field.Value != tt.wantValue {
+				t.Errorf("field value = %q, want %q", field.Value, tt.wantValue)
+			}
+		})
+	}
+
+	// Test not found
+	_, _, err = ResolveFieldName(entry.Fields, "nonexistent")
+	if err != ErrFieldNotFound {
+		t.Errorf("expected ErrFieldNotFound, got %v", err)
 	}
 }
