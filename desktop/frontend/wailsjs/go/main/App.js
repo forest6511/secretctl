@@ -22,6 +22,10 @@ export function CreateSecret(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['CreateSecret'](arg1, arg2, arg3, arg4, arg5);
 }
 
+export function CreateSecretMultiField(arg1) {
+  return window['go']['main']['App']['CreateSecretMultiField'](arg1);
+}
+
 export function DeleteSecret(arg1) {
   return window['go']['main']['App']['DeleteSecret'](arg1);
 }
@@ -68,6 +72,10 @@ export function Unlock(arg1) {
 
 export function UpdateSecret(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['UpdateSecret'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function UpdateSecretMultiField(arg1) {
+  return window['go']['main']['App']['UpdateSecretMultiField'](arg1);
 }
 
 export function VerifyAuditLogs() {

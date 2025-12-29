@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -363,6 +365,200 @@ func (a *App) DeleteSecret(key string) error {
 	}
 
 	return a.vault.DeleteSecret(key)
+}
+
+// SecretUpdateDTO represents a secret update request from the frontend
+type SecretUpdateDTO struct {
+	Key      string              `json:"key"`
+	Fields   map[string]FieldDTO `json:"fields"`
+	Bindings map[string]string   `json:"bindings,omitempty"`
+	Notes    string              `json:"notes,omitempty"`
+	URL      string              `json:"url,omitempty"`
+	Tags     []string            `json:"tags,omitempty"`
+}
+
+// validateSecretDTO validates the SecretUpdateDTO fields
+func validateSecretDTO(dto SecretUpdateDTO) error {
+	if dto.Key == "" {
+		return errors.New("secret key is required")
+	}
+	if len(dto.Fields) == 0 {
+		return errors.New("at least one field is required")
+	}
+
+	// Validate field names (snake_case)
+	fieldNameRegex := regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	for name := range dto.Fields {
+		if len(name) > 64 {
+			return fmt.Errorf("field name '%s' exceeds 64 characters", name)
+		}
+		if !fieldNameRegex.MatchString(name) {
+			return fmt.Errorf("field name '%s' must be snake_case (lowercase letters, numbers, underscores)", name)
+		}
+	}
+
+	// Validate binding names (SCREAMING_SNAKE_CASE) and references
+	envVarRegex := regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
+	for envVar, fieldName := range dto.Bindings {
+		if !envVarRegex.MatchString(envVar) {
+			return fmt.Errorf("environment variable '%s' must be SCREAMING_SNAKE_CASE", envVar)
+		}
+		if _, exists := dto.Fields[fieldName]; !exists {
+			return fmt.Errorf("binding '%s' references non-existent field '%s'", envVar, fieldName)
+		}
+	}
+
+	return nil
+}
+
+// UpdateSecretMultiField updates a secret with multi-field support
+func (a *App) UpdateSecretMultiField(dto SecretUpdateDTO) error {
+	if !a.unlocked {
+		return errors.New("vault locked")
+	}
+
+	// Validate input
+	if err := validateSecretDTO(dto); err != nil {
+		return err
+	}
+
+	// Convert FieldDTO to vault.Field
+	fields := make(map[string]vault.Field)
+	for name, fieldDTO := range dto.Fields {
+		fields[name] = vault.Field{
+			Value:     fieldDTO.Value,
+			Sensitive: fieldDTO.Sensitive,
+			Aliases:   fieldDTO.Aliases,
+			Kind:      fieldDTO.Kind,
+			Hint:      fieldDTO.Hint,
+		}
+	}
+
+	entry := &vault.SecretEntry{
+		Key:      dto.Key,
+		Fields:   fields,
+		Bindings: dto.Bindings,
+		Tags:     dto.Tags,
+	}
+
+	if dto.Notes != "" || dto.URL != "" {
+		entry.Metadata = &vault.SecretMetadata{
+			Notes: dto.Notes,
+			URL:   dto.URL,
+		}
+	}
+
+	// Persist first, then audit log (audit after success)
+	if err := a.vault.SetSecret(dto.Key, entry); err != nil {
+		// Log failure
+		_ = a.vault.AuditLogger().Log(
+			"secret.updated",
+			"desktop",
+			audit.ResultError,
+			dto.Key,
+			nil,
+			map[string]interface{}{
+				"error": err.Error(),
+			},
+		)
+		return err
+	}
+
+	// Log success after persistence
+	if err := a.vault.AuditLogger().Log(
+		"secret.updated",
+		"desktop",
+		audit.ResultSuccess,
+		dto.Key,
+		nil,
+		map[string]interface{}{
+			"field_count":   len(fields),
+			"binding_count": len(dto.Bindings),
+		},
+	); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// CreateSecretMultiField creates a new secret with multi-field support
+func (a *App) CreateSecretMultiField(dto SecretUpdateDTO) error {
+	if !a.unlocked {
+		return errors.New("vault locked")
+	}
+
+	// Validate input
+	if err := validateSecretDTO(dto); err != nil {
+		return err
+	}
+
+	// Check if secret already exists (only treat ErrSecretNotFound as expected)
+	_, err := a.vault.GetSecret(dto.Key)
+	if err == nil {
+		return errors.New("secret already exists")
+	}
+	// Note: We proceed with creation even if GetSecret returns other errors
+	// because the vault may not have any secrets yet or the secret simply doesn't exist
+
+	// Convert FieldDTO to vault.Field
+	fields := make(map[string]vault.Field)
+	for name, fieldDTO := range dto.Fields {
+		fields[name] = vault.Field{
+			Value:     fieldDTO.Value,
+			Sensitive: fieldDTO.Sensitive,
+			Aliases:   fieldDTO.Aliases,
+			Kind:      fieldDTO.Kind,
+			Hint:      fieldDTO.Hint,
+		}
+	}
+
+	entry := &vault.SecretEntry{
+		Key:      dto.Key,
+		Fields:   fields,
+		Bindings: dto.Bindings,
+		Tags:     dto.Tags,
+	}
+
+	if dto.Notes != "" || dto.URL != "" {
+		entry.Metadata = &vault.SecretMetadata{
+			Notes: dto.Notes,
+			URL:   dto.URL,
+		}
+	}
+
+	// Persist first, then audit log (audit after success)
+	if err := a.vault.SetSecret(dto.Key, entry); err != nil {
+		// Log failure
+		_ = a.vault.AuditLogger().Log(
+			"secret.created",
+			"desktop",
+			audit.ResultError,
+			dto.Key,
+			nil,
+			map[string]interface{}{
+				"error": err.Error(),
+			},
+		)
+		return err
+	}
+
+	// Log success after persistence
+	if err := a.vault.AuditLogger().Log(
+		"secret.created",
+		"desktop",
+		audit.ResultSuccess,
+		dto.Key,
+		nil,
+		map[string]interface{}{
+			"field_count":   len(fields),
+			"binding_count": len(dto.Bindings),
+		},
+	); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // CopyToClipboard copies value to clipboard and schedules auto-clear

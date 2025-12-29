@@ -7,11 +7,15 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
-import { FieldsSection } from '@/components/FieldsSection'
+import { FieldsSection, FieldDTO } from '@/components/FieldsSection'
+import { AddFieldDialog } from '@/components/AddFieldDialog'
+import { BindingsSection } from '@/components/BindingsSection'
+import { AddBindingDialog } from '@/components/AddBindingDialog'
 import { useToast } from '@/hooks/useToast'
 import {
-  ListSecrets, GetSecret, CreateSecret, UpdateSecret,
-  DeleteSecret, CopyToClipboard, Lock as LockVault, ResetIdleTimer
+  ListSecrets, GetSecret,
+  DeleteSecret, CopyToClipboard, Lock as LockVault, ResetIdleTimer,
+CreateSecretMultiField, UpdateSecretMultiField
 } from '../../wailsjs/go/main/App'
 import { main } from '../../wailsjs/go/models'
 import { EventsOn } from '../../wailsjs/runtime/runtime'
@@ -33,10 +37,17 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
 
   // Form state
   const [formKey, setFormKey] = useState('')
-  const [formValue, setFormValue] = useState('')
   const [formNotes, setFormNotes] = useState('')
   const [formUrl, setFormUrl] = useState('')
   const [formTags, setFormTags] = useState('')
+  // Multi-field state
+  const [formFields, setFormFields] = useState<Record<string, FieldDTO>>({})
+  const [formFieldOrder, setFormFieldOrder] = useState<string[]>([])
+  const [formBindings, setFormBindings] = useState<Record<string, string>>({})
+  // Dialog states
+  const [showAddFieldDialog, setShowAddFieldDialog] = useState(false)
+  const [showAddBindingDialog, setShowAddBindingDialog] = useState(false)
+  const [fieldToDelete, setFieldToDelete] = useState<string | null>(null)
 
   // Refs
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -171,10 +182,13 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
     setSelectedKey(null)
     setSelectedSecret(null)
     setFormKey('')
-    setFormValue('')
     setFormNotes('')
     setFormUrl('')
     setFormTags('')
+    // Initialize multi-field state
+    setFormFields({ value: { value: '', sensitive: true } })
+    setFormFieldOrder(['value'])
+    setFormBindings({})
     setShowValue(true)
   }
 
@@ -182,11 +196,93 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
     if (!selectedSecret) return
     setIsEditing(true)
     setFormKey(selectedSecret.key)
-    setFormValue(selectedSecret.value || '')
     setFormNotes(selectedSecret.notes || '')
     setFormUrl(selectedSecret.url || '')
     setFormTags(selectedSecret.tags?.join(', ') || '')
+    // Populate multi-field state
+    if (selectedSecret.fields && Object.keys(selectedSecret.fields).length > 0) {
+      setFormFields(selectedSecret.fields)
+      setFormFieldOrder(selectedSecret.fieldOrder || Object.keys(selectedSecret.fields))
+    } else {
+      // Legacy: single value -> value field
+      setFormFields({ value: { value: selectedSecret.value || '', sensitive: true } })
+      setFormFieldOrder(['value'])
+    }
+    setFormBindings(selectedSecret.bindings || {})
     setShowValue(true)
+  }
+
+  // Multi-field handlers
+  const handleAddField = (name: string, value: string, sensitive: boolean) => {
+    setFormFields(prev => ({
+      ...prev,
+      [name]: { value, sensitive }
+    }))
+    setFormFieldOrder(prev => [...prev, name])
+    setShowAddFieldDialog(false)
+  }
+
+  const handleFieldChange = (fieldName: string, value: string) => {
+    setFormFields(prev => {
+      const existing = prev[fieldName]
+      if (!existing) return prev
+      return {
+        ...prev,
+        [fieldName]: { ...existing, value }
+      }
+    })
+  }
+
+  const handleFieldSensitiveToggle = (fieldName: string) => {
+    setFormFields(prev => {
+      const existing = prev[fieldName]
+      if (!existing) return prev
+      return {
+        ...prev,
+        [fieldName]: { ...existing, sensitive: !existing.sensitive }
+      }
+    })
+  }
+
+  const handleFieldDelete = (fieldName: string) => {
+    setFieldToDelete(fieldName)
+  }
+
+  const confirmFieldDelete = () => {
+    if (!fieldToDelete) return
+    setFormFields(prev => {
+      const newFields = { ...prev }
+      delete newFields[fieldToDelete]
+      return newFields
+    })
+    setFormFieldOrder(prev => prev.filter(name => name !== fieldToDelete))
+    // Also remove any bindings referencing this field
+    setFormBindings(prev => {
+      const newBindings: Record<string, string> = {}
+      for (const [envVar, field] of Object.entries(prev)) {
+        if (field !== fieldToDelete) {
+          newBindings[envVar] = field
+        }
+      }
+      return newBindings
+    })
+    setFieldToDelete(null)
+  }
+
+  const handleAddBinding = (envVar: string, fieldName: string) => {
+    setFormBindings(prev => ({
+      ...prev,
+      [envVar]: fieldName
+    }))
+    setShowAddBindingDialog(false)
+  }
+
+  const handleBindingDelete = (envVar: string) => {
+    setFormBindings(prev => {
+      const newBindings = { ...prev }
+      delete newBindings[envVar]
+      return newBindings
+    })
   }
 
   const handleSave = async () => {
@@ -194,19 +290,30 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
       toast.error('Key is required')
       return
     }
-    if (!formValue.trim()) {
-      toast.error('Value is required')
+
+    // Validate at least one field exists
+    if (Object.keys(formFields).length === 0) {
+      toast.error('At least one field is required')
       return
     }
 
     const tags = formTags ? formTags.split(',').map(t => t.trim()).filter(Boolean) : []
 
     try {
+      const dto = {
+        key: formKey,
+        fields: formFields,
+        bindings: formBindings,
+        notes: formNotes,
+        url: formUrl,
+        tags: tags,
+      }
+
       if (isCreating) {
-        await CreateSecret(formKey, formValue, formNotes, formUrl, tags)
+        await CreateSecretMultiField(dto as main.SecretUpdateDTO)
         toast.success('Secret created')
       } else {
-        await UpdateSecret(formKey, formValue, formNotes, formUrl, tags)
+        await UpdateSecretMultiField(dto as main.SecretUpdateDTO)
         toast.success('Changes saved')
       }
       setIsCreating(false)
@@ -341,25 +448,49 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
                   data-testid="secret-key-input"
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Value</label>
-                <div className="relative">
-                  <Input
-                    type={showValue ? 'text' : 'password'}
-                    value={formValue}
-                    onChange={(e) => setFormValue(e.target.value)}
-                    placeholder="Secret value"
-                    className="pr-10"
-                    data-testid="secret-value-input"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowValue(!showValue)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium">Fields</label>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowAddFieldDialog(true)}
+                    data-testid="add-field-button"
                   >
-                    {showValue ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
+                    <Plus className="w-4 h-4 mr-1" />
+                    Add Field
+                  </Button>
                 </div>
+                <FieldsSection
+                  secretKey={isCreating ? '' : formKey}
+                  fields={formFields}
+                  fieldOrder={formFieldOrder}
+                  readOnly={false}
+                  onFieldChange={handleFieldChange}
+                  onFieldSensitiveToggle={handleFieldSensitiveToggle}
+                  onFieldDelete={handleFieldDelete}
+                />
+              </div>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium">Environment Bindings</label>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowAddBindingDialog(true)}
+                    disabled={formFieldOrder.length === 0}
+                    data-testid="add-binding-button"
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Add Binding
+                  </Button>
+                </div>
+                <BindingsSection
+                  bindings={formBindings}
+                  fieldNames={formFieldOrder}
+                  readOnly={false}
+                  onDelete={handleBindingDelete}
+                />
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">URL (optional)</label>
@@ -530,6 +661,34 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
         variant="destructive"
         onConfirm={handleDeleteConfirm}
         onCancel={() => setDeleteDialogOpen(false)}
+      />
+      {/* Add Field Dialog */}
+      <AddFieldDialog
+        open={showAddFieldDialog}
+        existingFieldNames={formFieldOrder}
+        onAdd={handleAddField}
+        onCancel={() => setShowAddFieldDialog(false)}
+      />
+
+      {/* Add Binding Dialog */}
+      <AddBindingDialog
+        open={showAddBindingDialog}
+        existingEnvVars={Object.keys(formBindings)}
+        fieldNames={formFieldOrder}
+        onAdd={handleAddBinding}
+        onCancel={() => setShowAddBindingDialog(false)}
+      />
+
+      {/* Confirm Field Delete Dialog */}
+      <ConfirmDialog
+        open={fieldToDelete !== null}
+        title="Delete Field"
+        message={`Are you sure you want to delete the field "${fieldToDelete}"? This action cannot be undone.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="destructive"
+        onConfirm={confirmFieldDelete}
+        onCancel={() => setFieldToDelete(null)}
       />
     </div>
   )

@@ -1,21 +1,26 @@
-import { FieldEditor } from './FieldEditor'
+import { FieldEditor, FieldDTO } from './FieldEditor'
 
-interface FieldDTO {
-  value: string
-  sensitive: boolean
-  aliases?: string[]
-  kind?: string
-  hint?: string
-}
+export type { FieldDTO }
 
 interface FieldsSectionProps {
   secretKey: string
   fields: Record<string, FieldDTO>
   fieldOrder: string[]
   readOnly?: boolean
+  onFieldChange?: (fieldName: string, value: string) => void
+  onFieldSensitiveToggle?: (fieldName: string) => void
+  onFieldDelete?: (fieldName: string) => void
 }
 
-export function FieldsSection({ secretKey, fields, fieldOrder, readOnly = true }: FieldsSectionProps) {
+export function FieldsSection({
+  secretKey,
+  fields,
+  fieldOrder,
+  readOnly = true,
+  onFieldChange,
+  onFieldSensitiveToggle,
+  onFieldDelete
+}: FieldsSectionProps) {
   // Use fieldOrder if available, otherwise fallback to object keys
   const orderedFieldNames = fieldOrder.length > 0 ? fieldOrder : Object.keys(fields)
 
@@ -40,6 +45,9 @@ export function FieldsSection({ secretKey, fields, fieldOrder, readOnly = true }
             fieldName={fieldName}
             field={field}
             readOnly={readOnly}
+            onChange={onFieldChange ? (value) => onFieldChange(fieldName, value) : undefined}
+            onSensitiveToggle={onFieldSensitiveToggle ? () => onFieldSensitiveToggle(fieldName) : undefined}
+            onDelete={onFieldDelete ? () => onFieldDelete(fieldName) : undefined}
           />
         )
       })}
