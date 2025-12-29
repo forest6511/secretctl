@@ -22,6 +22,8 @@ export function GetAuthStatus():Promise<main.AuthStatus>;
 
 export function GetSecret(arg1:string):Promise<main.Secret>;
 
+export function GetTemplates():Promise<Array<main.TemplateInfo>>;
+
 export function InitVault(arg1:string):Promise<void>;
 
 export function ListAuditLogs(arg1:number):Promise<Array<main.AuditLogEntry>>;

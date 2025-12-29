@@ -42,6 +42,10 @@ export function GetSecret(arg1) {
   return window['go']['main']['App']['GetSecret'](arg1);
 }
 
+export function GetTemplates() {
+  return window['go']['main']['App']['GetTemplates']();
+}
+
 export function InitVault(arg1) {
   return window['go']['main']['App']['InitVault'](arg1);
 }

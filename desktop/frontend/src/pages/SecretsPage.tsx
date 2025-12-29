@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { FieldsSection, FieldDTO } from '@/components/FieldsSection'
+import { TemplateSelector } from '@/components/TemplateSelector'
 import { AddFieldDialog } from '@/components/AddFieldDialog'
 import { BindingsSection } from '@/components/BindingsSection'
 import { AddBindingDialog } from '@/components/AddBindingDialog'
@@ -15,7 +16,7 @@ import { useToast } from '@/hooks/useToast'
 import {
   ListSecrets, GetSecret,
   DeleteSecret, CopyToClipboard, Lock as LockVault, ResetIdleTimer,
-CreateSecretMultiField, UpdateSecretMultiField
+CreateSecretMultiField, UpdateSecretMultiField, GetTemplates
 } from '../../wailsjs/go/main/App'
 import { main } from '../../wailsjs/go/models'
 import { EventsOn } from '../../wailsjs/runtime/runtime'
@@ -47,6 +48,9 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
   // Dialog states
   const [showAddFieldDialog, setShowAddFieldDialog] = useState(false)
   const [showAddBindingDialog, setShowAddBindingDialog] = useState(false)
+  // Template selection state
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null)
+  const [templates, setTemplates] = useState<main.TemplateInfo[]>([])
   const [fieldToDelete, setFieldToDelete] = useState<string | null>(null)
 
   // Refs
@@ -190,8 +194,52 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
     setFormFieldOrder(['value'])
     setFormBindings({})
     setShowValue(true)
+    setSelectedTemplate(null)
   }
 
+
+  // Load templates when starting to create
+  useEffect(() => {
+    const loadTemplates = async () => {
+      if (isCreating) {
+        try {
+          const result = await GetTemplates()
+          setTemplates(result)
+        } catch (err) {
+          console.error('Failed to load templates:', err)
+        }
+      }
+    }
+    loadTemplates()
+  }, [isCreating])
+
+  const handleTemplateSelect = (templateId: string | null) => {
+    setSelectedTemplate(templateId)
+    if (!templateId) {
+      // Reset to default single field
+      setFormFields({ value: { value: '', sensitive: true } })
+      setFormFieldOrder(['value'])
+      setFormBindings({})
+      return
+    }
+    // Find template and populate fields
+    const template = templates.find(t => t.id === templateId)
+    if (!template) return
+    
+    const newFields: Record<string, FieldDTO> = {}
+    const newFieldOrder: string[] = []
+    for (const field of template.fields) {
+      newFields[field.name] = {
+        value: '',
+        sensitive: field.sensitive,
+        hint: field.hint,
+      }
+      newFieldOrder.push(field.name)
+    }
+    setFormFields(newFields)
+    setFormFieldOrder(newFieldOrder)
+    setFormBindings(template.bindings || {})
+  }
   const handleStartEdit = () => {
     if (!selectedSecret) return
     setIsEditing(true)
@@ -210,6 +258,7 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
     }
     setFormBindings(selectedSecret.bindings || {})
     setShowValue(true)
+    setSelectedTemplate(null)
   }
 
   // Multi-field handlers
@@ -448,6 +497,15 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
                   data-testid="secret-key-input"
                 />
               </div>
+
+              {/* Template Selector - only show in create mode */}
+              {isCreating && (
+                <TemplateSelector
+                  templates={templates}
+                  selectedTemplate={selectedTemplate}
+                  onSelect={handleTemplateSelect}
+                />
+              )}
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <label className="text-sm font-medium">Fields</label>
