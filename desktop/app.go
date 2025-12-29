@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -169,22 +172,38 @@ func (a *App) GetAuthStatus() AuthStatus {
 // Secret API
 // ============================================================================
 
+// FieldDTO represents a field for frontend
+type FieldDTO struct {
+	Value     string   `json:"value"`
+	Sensitive bool     `json:"sensitive"`
+	Aliases   []string `json:"aliases,omitempty"`
+	Kind      string   `json:"kind,omitempty"`
+	Hint      string   `json:"hint,omitempty"`
+}
+
 // Secret represents a secret for frontend
 type Secret struct {
-	Key       string   `json:"key"`
-	Value     string   `json:"value,omitempty"`
-	Notes     string   `json:"notes,omitempty"`
-	URL       string   `json:"url,omitempty"`
-	Tags      []string `json:"tags,omitempty"`
-	CreatedAt string   `json:"createdAt"`
-	UpdatedAt string   `json:"updatedAt"`
+	Key        string              `json:"key"`
+	Value      string              `json:"value,omitempty"`      // Legacy: single value
+	Fields     map[string]FieldDTO `json:"fields,omitempty"`     // Multi-field values
+	FieldOrder []string            `json:"fieldOrder,omitempty"` // Field display order
+	Bindings   map[string]string   `json:"bindings,omitempty"`   // env_var -> field_name
+	Notes      string              `json:"notes,omitempty"`
+	URL        string              `json:"url,omitempty"`
+	Tags       []string            `json:"tags,omitempty"`
+	CreatedAt  string              `json:"createdAt"`
+	UpdatedAt  string              `json:"updatedAt"`
 }
 
 // SecretListItem represents a secret in list view (no value)
 type SecretListItem struct {
-	Key       string   `json:"key"`
-	Tags      []string `json:"tags,omitempty"`
-	UpdatedAt string   `json:"updatedAt"`
+	Key          string   `json:"key"`
+	Tags         []string `json:"tags,omitempty"`
+	UpdatedAt    string   `json:"updatedAt"`
+	FieldCount   int      `json:"fieldCount"`
+	BindingCount int      `json:"bindingCount"`
+	HasNotes     bool     `json:"hasNotes"`
+	HasURL       bool     `json:"hasUrl"`
 }
 
 // ListSecrets returns all secret keys
@@ -204,10 +223,28 @@ func (a *App) ListSecrets() ([]SecretListItem, error) {
 		if err != nil {
 			continue
 		}
+
+		// Calculate field count (legacy single value = 1 field)
+		fieldCount := len(entry.Fields)
+		if fieldCount == 0 && len(entry.Value) > 0 {
+			fieldCount = 1
+		}
+
+		hasNotes := false
+		hasURL := false
+		if entry.Metadata != nil {
+			hasNotes = entry.Metadata.Notes != ""
+			hasURL = entry.Metadata.URL != ""
+		}
+
 		items = append(items, SecretListItem{
-			Key:       key,
-			Tags:      entry.Tags,
-			UpdatedAt: entry.UpdatedAt.Format(time.RFC3339),
+			Key:          key,
+			Tags:         entry.Tags,
+			UpdatedAt:    entry.UpdatedAt.Format(time.RFC3339),
+			FieldCount:   fieldCount,
+			BindingCount: len(entry.Bindings),
+			HasNotes:     hasNotes,
+			HasURL:       hasURL,
 		})
 	}
 
@@ -232,14 +269,50 @@ func (a *App) GetSecret(key string) (*Secret, error) {
 		url = entry.Metadata.URL
 	}
 
+	// Build Fields and FieldOrder
+	fields := make(map[string]FieldDTO)
+	var fieldOrder []string
+
+	if len(entry.Fields) > 0 {
+		// Multi-field secret
+		for name, field := range entry.Fields {
+			fields[name] = FieldDTO{
+				Value:     field.Value,
+				Sensitive: field.Sensitive,
+				Aliases:   field.Aliases,
+				Kind:      field.Kind,
+				Hint:      field.Hint,
+			}
+			fieldOrder = append(fieldOrder, name)
+		}
+		// Sort field order deterministically (alphabetically)
+		sort.Strings(fieldOrder)
+	} else if len(entry.Value) > 0 {
+		// Legacy single-value secret: convert to Fields["value"]
+		fields["value"] = FieldDTO{
+			Value:     string(entry.Value),
+			Sensitive: true, // Legacy values are treated as sensitive
+		}
+		fieldOrder = []string{"value"}
+	}
+
+	// Copy bindings
+	bindings := make(map[string]string)
+	for k, v := range entry.Bindings {
+		bindings[k] = v
+	}
+
 	return &Secret{
-		Key:       entry.Key,
-		Value:     string(entry.Value),
-		Notes:     notes,
-		URL:       url,
-		Tags:      entry.Tags,
-		CreatedAt: entry.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: entry.UpdatedAt.Format(time.RFC3339),
+		Key:        entry.Key,
+		Value:      string(entry.Value), // Keep for backward compatibility
+		Fields:     fields,
+		FieldOrder: fieldOrder,
+		Bindings:   bindings,
+		Notes:      notes,
+		URL:        url,
+		Tags:       entry.Tags,
+		CreatedAt:  entry.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:  entry.UpdatedAt.Format(time.RFC3339),
 	}, nil
 }
 
@@ -294,6 +367,200 @@ func (a *App) DeleteSecret(key string) error {
 	return a.vault.DeleteSecret(key)
 }
 
+// SecretUpdateDTO represents a secret update request from the frontend
+type SecretUpdateDTO struct {
+	Key      string              `json:"key"`
+	Fields   map[string]FieldDTO `json:"fields"`
+	Bindings map[string]string   `json:"bindings,omitempty"`
+	Notes    string              `json:"notes,omitempty"`
+	URL      string              `json:"url,omitempty"`
+	Tags     []string            `json:"tags,omitempty"`
+}
+
+// validateSecretDTO validates the SecretUpdateDTO fields
+func validateSecretDTO(dto SecretUpdateDTO) error {
+	if dto.Key == "" {
+		return errors.New("secret key is required")
+	}
+	if len(dto.Fields) == 0 {
+		return errors.New("at least one field is required")
+	}
+
+	// Validate field names (snake_case)
+	fieldNameRegex := regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	for name := range dto.Fields {
+		if len(name) > 64 {
+			return fmt.Errorf("field name '%s' exceeds 64 characters", name)
+		}
+		if !fieldNameRegex.MatchString(name) {
+			return fmt.Errorf("field name '%s' must be snake_case (lowercase letters, numbers, underscores)", name)
+		}
+	}
+
+	// Validate binding names (SCREAMING_SNAKE_CASE) and references
+	envVarRegex := regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
+	for envVar, fieldName := range dto.Bindings {
+		if !envVarRegex.MatchString(envVar) {
+			return fmt.Errorf("environment variable '%s' must be SCREAMING_SNAKE_CASE", envVar)
+		}
+		if _, exists := dto.Fields[fieldName]; !exists {
+			return fmt.Errorf("binding '%s' references non-existent field '%s'", envVar, fieldName)
+		}
+	}
+
+	return nil
+}
+
+// UpdateSecretMultiField updates a secret with multi-field support
+func (a *App) UpdateSecretMultiField(dto SecretUpdateDTO) error {
+	if !a.unlocked {
+		return errors.New("vault locked")
+	}
+
+	// Validate input
+	if err := validateSecretDTO(dto); err != nil {
+		return err
+	}
+
+	// Convert FieldDTO to vault.Field
+	fields := make(map[string]vault.Field)
+	for name, fieldDTO := range dto.Fields {
+		fields[name] = vault.Field{
+			Value:     fieldDTO.Value,
+			Sensitive: fieldDTO.Sensitive,
+			Aliases:   fieldDTO.Aliases,
+			Kind:      fieldDTO.Kind,
+			Hint:      fieldDTO.Hint,
+		}
+	}
+
+	entry := &vault.SecretEntry{
+		Key:      dto.Key,
+		Fields:   fields,
+		Bindings: dto.Bindings,
+		Tags:     dto.Tags,
+	}
+
+	if dto.Notes != "" || dto.URL != "" {
+		entry.Metadata = &vault.SecretMetadata{
+			Notes: dto.Notes,
+			URL:   dto.URL,
+		}
+	}
+
+	// Persist first, then audit log (audit after success)
+	if err := a.vault.SetSecret(dto.Key, entry); err != nil {
+		// Log failure
+		_ = a.vault.AuditLogger().Log(
+			"secret.updated",
+			"desktop",
+			audit.ResultError,
+			dto.Key,
+			nil,
+			map[string]interface{}{
+				"error": err.Error(),
+			},
+		)
+		return err
+	}
+
+	// Log success after persistence
+	if err := a.vault.AuditLogger().Log(
+		"secret.updated",
+		"desktop",
+		audit.ResultSuccess,
+		dto.Key,
+		nil,
+		map[string]interface{}{
+			"field_count":   len(fields),
+			"binding_count": len(dto.Bindings),
+		},
+	); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// CreateSecretMultiField creates a new secret with multi-field support
+func (a *App) CreateSecretMultiField(dto SecretUpdateDTO) error {
+	if !a.unlocked {
+		return errors.New("vault locked")
+	}
+
+	// Validate input
+	if err := validateSecretDTO(dto); err != nil {
+		return err
+	}
+
+	// Check if secret already exists (only treat ErrSecretNotFound as expected)
+	_, err := a.vault.GetSecret(dto.Key)
+	if err == nil {
+		return errors.New("secret already exists")
+	}
+	// Note: We proceed with creation even if GetSecret returns other errors
+	// because the vault may not have any secrets yet or the secret simply doesn't exist
+
+	// Convert FieldDTO to vault.Field
+	fields := make(map[string]vault.Field)
+	for name, fieldDTO := range dto.Fields {
+		fields[name] = vault.Field{
+			Value:     fieldDTO.Value,
+			Sensitive: fieldDTO.Sensitive,
+			Aliases:   fieldDTO.Aliases,
+			Kind:      fieldDTO.Kind,
+			Hint:      fieldDTO.Hint,
+		}
+	}
+
+	entry := &vault.SecretEntry{
+		Key:      dto.Key,
+		Fields:   fields,
+		Bindings: dto.Bindings,
+		Tags:     dto.Tags,
+	}
+
+	if dto.Notes != "" || dto.URL != "" {
+		entry.Metadata = &vault.SecretMetadata{
+			Notes: dto.Notes,
+			URL:   dto.URL,
+		}
+	}
+
+	// Persist first, then audit log (audit after success)
+	if err := a.vault.SetSecret(dto.Key, entry); err != nil {
+		// Log failure
+		_ = a.vault.AuditLogger().Log(
+			"secret.created",
+			"desktop",
+			audit.ResultError,
+			dto.Key,
+			nil,
+			map[string]interface{}{
+				"error": err.Error(),
+			},
+		)
+		return err
+	}
+
+	// Log success after persistence
+	if err := a.vault.AuditLogger().Log(
+		"secret.created",
+		"desktop",
+		audit.ResultSuccess,
+		dto.Key,
+		nil,
+		map[string]interface{}{
+			"field_count":   len(fields),
+			"binding_count": len(dto.Bindings),
+		},
+	); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // CopyToClipboard copies value to clipboard and schedules auto-clear
 func (a *App) CopyToClipboard(value string) error {
 	err := runtime.ClipboardSetText(a.ctx, value)
@@ -318,6 +585,75 @@ func (a *App) ClearClipboard() {
 	if a.ctx != nil {
 		runtime.ClipboardSetText(a.ctx, "")
 	}
+}
+
+// ViewSensitiveField logs when a sensitive field is viewed
+func (a *App) ViewSensitiveField(key, fieldName string) error {
+	if !a.unlocked {
+		return errors.New("vault locked")
+	}
+
+	return a.vault.AuditLogger().Log(
+		"secret.field_viewed",
+		"desktop",
+		audit.ResultSuccess,
+		key,
+		nil,
+		map[string]interface{}{"field": fieldName},
+	)
+}
+
+// CopyFieldValue logs when a field value is copied and copies to clipboard
+// Security: Fetches the actual value from vault to prevent caller manipulation
+func (a *App) CopyFieldValue(key, fieldName string) error {
+	if !a.unlocked {
+		return errors.New("vault locked")
+	}
+
+	// Fetch the actual secret from vault (security: don't trust caller-provided values)
+	entry, err := a.vault.GetSecret(key)
+	if err != nil {
+		return err
+	}
+
+	// Get the field value and sensitivity from the stored secret
+	var fieldValue string
+	var sensitive bool
+
+	if len(entry.Fields) > 0 {
+		field, ok := entry.Fields[fieldName]
+		if !ok {
+			return errors.New("field not found")
+		}
+		fieldValue = field.Value
+		sensitive = field.Sensitive
+	} else if fieldName == "value" && len(entry.Value) > 0 {
+		// Legacy single value
+		fieldValue = string(entry.Value)
+		sensitive = true
+	} else {
+		return errors.New("field not found")
+	}
+
+	// Log the copy action
+	operation := "secret.field_copied"
+	if sensitive {
+		operation = "secret.sensitive_field_copied"
+	}
+
+	if err := a.vault.AuditLogger().Log(
+		operation,
+		"desktop",
+		audit.ResultSuccess,
+		key,
+		nil,
+		map[string]interface{}{"field": fieldName},
+	); err != nil {
+		return err
+	}
+
+	// Copy to clipboard with auto-clear
+	return a.CopyToClipboard(fieldValue)
 }
 
 // ============================================================================

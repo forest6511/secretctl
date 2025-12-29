@@ -4,9 +4,15 @@ import {main} from '../models';
 
 export function CheckVaultExists():Promise<boolean>;
 
+export function ClearClipboard():Promise<void>;
+
+export function CopyFieldValue(arg1:string,arg2:string):Promise<void>;
+
 export function CopyToClipboard(arg1:string):Promise<void>;
 
 export function CreateSecret(arg1:string,arg2:string,arg3:string,arg4:string,arg5:Array<string>):Promise<void>;
+
+export function CreateSecretMultiField(arg1:main.SecretUpdateDTO):Promise<void>;
 
 export function DeleteSecret(arg1:string):Promise<void>;
 
@@ -32,4 +38,8 @@ export function Unlock(arg1:string):Promise<void>;
 
 export function UpdateSecret(arg1:string,arg2:string,arg3:string,arg4:string,arg5:Array<string>):Promise<void>;
 
+export function UpdateSecretMultiField(arg1:main.SecretUpdateDTO):Promise<void>;
+
 export function VerifyAuditLogs():Promise<boolean>;
+
+export function ViewSensitiveField(arg1:string,arg2:string):Promise<void>;
