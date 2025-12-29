@@ -94,6 +94,48 @@ type SecretRunOutput struct {
 	Sanitized  bool   `json:"sanitized"`
 }
 
+// SecretListFieldsInput represents input for secret_list_fields tool.
+type SecretListFieldsInput struct {
+	Key string `json:"key"`
+}
+
+// SecretListFieldsOutput represents output for secret_list_fields tool.
+type SecretListFieldsOutput struct {
+	Key    string      `json:"key"`
+	Fields []FieldInfo `json:"fields"`
+}
+
+// FieldInfo represents metadata for a single field (no value).
+type FieldInfo struct {
+	Name      string   `json:"name"`
+	Sensitive bool     `json:"sensitive"`
+	Hint      string   `json:"hint,omitempty"`
+	Kind      string   `json:"kind,omitempty"`
+	Aliases   []string `json:"aliases,omitempty"`
+}
+
+// SecretGetFieldInput represents input for secret_get_field tool.
+type SecretGetFieldInput struct {
+	Key   string `json:"key"`
+	Field string `json:"field"`
+}
+
+// SecretGetFieldOutput represents output for secret_get_field tool.
+type SecretGetFieldOutput struct {
+	Key       string `json:"key"`
+	Field     string `json:"field"`
+	Value     string `json:"value"`
+	Sensitive bool   `json:"sensitive"`
+}
+
+// SecretRunWithBindingsInput represents input for secret_run_with_bindings tool.
+type SecretRunWithBindingsInput struct {
+	Key     string   `json:"key"`
+	Command string   `json:"command"`
+	Args    []string `json:"args,omitempty"`
+	Timeout string   `json:"timeout,omitempty"`
+}
+
 // handleSecretList handles the secret_list tool call.
 func (s *Server) handleSecretList(_ context.Context, _ *mcp.CallToolRequest, input SecretListInput) (*mcp.CallToolResult, SecretListOutput, error) {
 	var entries []*vault.SecretEntry
@@ -368,6 +410,370 @@ func (s *Server) handleSecretRun(ctx context.Context, _ *mcp.CallToolRequest, in
 	return nil, *result, nil
 }
 
+// handleSecretListFields handles the secret_list_fields tool call.
+func (s *Server) handleSecretListFields(_ context.Context, _ *mcp.CallToolRequest, input SecretListFieldsInput) (*mcp.CallToolResult, SecretListFieldsOutput, error) {
+	if input.Key == "" {
+		_ = s.vault.Audit().LogError(audit.OpSecretListFields, audit.SourceMCP, "", "INVALID_INPUT", "key is required")
+		return nil, SecretListFieldsOutput{}, errors.New("key is required")
+	}
+
+	entry, err := s.vault.GetSecret(input.Key)
+	if err != nil {
+		_ = s.vault.Audit().LogError(audit.OpSecretListFields, audit.SourceMCP, input.Key, "GET_FAILED", err.Error())
+		return nil, SecretListFieldsOutput{}, fmt.Errorf("failed to get secret: %w", err)
+	}
+
+	// Build field info list (no values!)
+	output := SecretListFieldsOutput{
+		Key:    input.Key,
+		Fields: make([]FieldInfo, 0, len(entry.Fields)),
+	}
+
+	for name, field := range entry.Fields {
+		info := FieldInfo{
+			Name:      name,
+			Sensitive: field.Sensitive,
+			Hint:      field.Hint,
+			Kind:      field.Kind,
+			Aliases:   field.Aliases,
+		}
+		output.Fields = append(output.Fields, info)
+	}
+
+	// Sort fields by name for consistent output
+	sort.Slice(output.Fields, func(i, j int) bool {
+		return output.Fields[i].Name < output.Fields[j].Name
+	})
+
+	// Log successful list fields operation
+	_ = s.vault.Audit().LogSuccess(audit.OpSecretListFields, audit.SourceMCP, input.Key)
+
+	return nil, output, nil
+}
+
+// handleSecretGetField handles the secret_get_field tool call.
+// Per Option D+: Only non-sensitive fields can be retrieved via MCP.
+func (s *Server) handleSecretGetField(_ context.Context, _ *mcp.CallToolRequest, input SecretGetFieldInput) (*mcp.CallToolResult, SecretGetFieldOutput, error) {
+	if input.Key == "" {
+		_ = s.vault.Audit().LogError(audit.OpSecretGetField, audit.SourceMCP, "", "INVALID_INPUT", "key is required")
+		return nil, SecretGetFieldOutput{}, errors.New("key is required")
+	}
+	if input.Field == "" {
+		_ = s.vault.Audit().LogError(audit.OpSecretGetField, audit.SourceMCP, input.Key, "INVALID_INPUT", "field is required")
+		return nil, SecretGetFieldOutput{}, errors.New("field is required")
+	}
+
+	entry, err := s.vault.GetSecret(input.Key)
+	if err != nil {
+		_ = s.vault.Audit().LogError(audit.OpSecretGetField, audit.SourceMCP, input.Key, "GET_FAILED", err.Error())
+		return nil, SecretGetFieldOutput{}, fmt.Errorf("failed to get secret: %w", err)
+	}
+
+	// Resolve field name (supports aliases)
+	canonicalName, field, err := vault.ResolveFieldName(entry.Fields, input.Field)
+	if err != nil {
+		_ = s.vault.Audit().LogError(audit.OpSecretGetField, audit.SourceMCP, input.Key, "FIELD_NOT_FOUND", input.Field)
+		return nil, SecretGetFieldOutput{}, fmt.Errorf("field '%s' not found in secret '%s'", input.Field, input.Key)
+	}
+
+	// Option D+ enforcement: Reject sensitive fields
+	if field.Sensitive {
+		_ = s.vault.Audit().LogDenied(audit.OpSecretGetFieldDenied, audit.SourceMCP, input.Key, fmt.Sprintf("sensitive field: %s", canonicalName))
+		return nil, SecretGetFieldOutput{}, fmt.Errorf("field '%s' is marked as sensitive and cannot be retrieved via MCP (Option D+ policy)", canonicalName)
+	}
+
+	// Log successful get field operation
+	_ = s.vault.Audit().LogSuccess(audit.OpSecretGetField, audit.SourceMCP, fmt.Sprintf("%s.%s", input.Key, canonicalName))
+
+	return nil, SecretGetFieldOutput{
+		Key:       input.Key,
+		Field:     canonicalName,
+		Value:     field.Value,
+		Sensitive: field.Sensitive,
+	}, nil
+}
+
+// handleSecretRunWithBindings handles the secret_run_with_bindings tool call.
+// Uses the secret's Bindings map to inject environment variables.
+func (s *Server) handleSecretRunWithBindings(ctx context.Context, _ *mcp.CallToolRequest, input *SecretRunWithBindingsInput) (*mcp.CallToolResult, SecretRunOutput, error) {
+	// Acquire semaphore for concurrency limiting
+	select {
+	case s.runSem <- struct{}{}:
+		defer func() { <-s.runSem }()
+	default:
+		_ = s.vault.Audit().LogError(audit.OpSecretRunWithBindings, audit.SourceMCP, "", "RATE_LIMITED", "too many concurrent operations")
+		return nil, SecretRunOutput{}, errors.New("too many concurrent secret_run operations (max 5)")
+	}
+
+	// Validate required fields
+	if input.Key == "" {
+		_ = s.vault.Audit().LogError(audit.OpSecretRunWithBindings, audit.SourceMCP, "", "INVALID_INPUT", "key is required")
+		return nil, SecretRunOutput{}, errors.New("key is required")
+	}
+	if input.Command == "" {
+		_ = s.vault.Audit().LogError(audit.OpSecretRunWithBindings, audit.SourceMCP, "", "INVALID_INPUT", "command is required")
+		return nil, SecretRunOutput{}, errors.New("command is required")
+	}
+	if len(input.Command) > 4096 {
+		_ = s.vault.Audit().LogError(audit.OpSecretRunWithBindings, audit.SourceMCP, "", "INVALID_INPUT", "command too long")
+		return nil, SecretRunOutput{}, errors.New("command too long (max 4096)")
+	}
+	if len(input.Args) > 100 {
+		_ = s.vault.Audit().LogError(audit.OpSecretRunWithBindings, audit.SourceMCP, "", "INVALID_INPUT", "too many args")
+		return nil, SecretRunOutput{}, errors.New("too many args (max 100)")
+	}
+
+	// Check policy
+	if s.policy == nil {
+		_ = s.vault.Audit().LogDenied(audit.OpSecretRunWithBindings, audit.SourceMCP, "", "NO_POLICY")
+		return nil, SecretRunOutput{}, errors.New("MCP policy not configured. Create ~/.secretctl/mcp-policy.yaml to enable secret_run")
+	}
+
+	// Resolve and validate command
+	resolvedCmd, err := ResolveAndValidateCommand(input.Command)
+	if err != nil {
+		_ = s.vault.Audit().LogError(audit.OpSecretRunWithBindings, audit.SourceMCP, input.Command, "CMD_VALIDATION_FAILED", err.Error())
+		return nil, SecretRunOutput{}, fmt.Errorf("command validation failed: %w", err)
+	}
+
+	// Check policy
+	allowed, reason := s.policy.IsCommandAllowed(input.Command)
+	if !allowed {
+		allowed, reason = s.policy.IsCommandAllowed(resolvedCmd)
+	}
+	if !allowed {
+		_ = s.vault.Audit().LogDenied(audit.OpSecretRunWithBindings, audit.SourceMCP, input.Command, reason)
+		return nil, SecretRunOutput{}, fmt.Errorf("command not allowed by policy: %s", reason)
+	}
+
+	// Get the secret
+	entry, err := s.vault.GetSecret(input.Key)
+	if err != nil {
+		_ = s.vault.Audit().LogError(audit.OpSecretRunWithBindings, audit.SourceMCP, input.Key, "GET_FAILED", err.Error())
+		return nil, SecretRunOutput{}, fmt.Errorf("failed to get secret: %w", err)
+	}
+
+	// Check if secret has bindings
+	if len(entry.Bindings) == 0 {
+		_ = s.vault.Audit().LogError(audit.OpSecretRunWithBindings, audit.SourceMCP, input.Key, "NO_BINDINGS", "secret has no bindings defined")
+		return nil, SecretRunOutput{}, fmt.Errorf("secret '%s' has no bindings defined. Use 'secretctl set %s --binding ENV=field' to add bindings", input.Key, input.Key)
+	}
+
+	// Check expiration
+	if entry.ExpiresAt != nil && entry.ExpiresAt.Before(time.Now()) {
+		_ = s.vault.Audit().LogError(audit.OpSecretRunWithBindings, audit.SourceMCP, input.Key, "EXPIRED", "secret has expired")
+		return nil, SecretRunOutput{}, fmt.Errorf("secret '%s' has expired", input.Key)
+	}
+
+	// Parse timeout
+	timeout := 5 * time.Minute
+	if input.Timeout != "" {
+		timeout, err = time.ParseDuration(input.Timeout)
+		if err != nil {
+			timeout, err = parseDuration(input.Timeout)
+			if err != nil {
+				_ = s.vault.Audit().LogError(audit.OpSecretRunWithBindings, audit.SourceMCP, "", "INVALID_TIMEOUT", err.Error())
+				return nil, SecretRunOutput{}, fmt.Errorf("invalid timeout format: %w", err)
+			}
+		}
+	}
+	if timeout > time.Hour {
+		timeout = time.Hour
+	}
+
+	// Build environment from bindings
+	env, secrets, err := s.buildEnvironmentFromBindings(entry)
+	if err != nil {
+		_ = s.vault.Audit().LogError(audit.OpSecretRunWithBindings, audit.SourceMCP, input.Key, "ENV_BUILD_FAILED", err.Error())
+		return nil, SecretRunOutput{}, err
+	}
+	defer wipeBindingSecrets(secrets)
+	defer wipeEnvSlice(env)
+
+	// Execute command
+	startTime := time.Now()
+	result, err := s.executeCommandWithBindings(ctx, resolvedCmd, input.Args, env, secrets, timeout)
+	if err != nil {
+		_ = s.vault.Audit().LogError(audit.OpSecretRunWithBindings, audit.SourceMCP, input.Command, "EXEC_FAILED", err.Error())
+		return nil, SecretRunOutput{}, err
+	}
+
+	result.DurationMs = time.Since(startTime).Milliseconds()
+	result.Sanitized = true
+
+	// Log successful command execution
+	_ = s.vault.Audit().LogSuccess(audit.OpSecretRunWithBindings, audit.SourceMCP, fmt.Sprintf("%s:%s", input.Key, input.Command))
+
+	return nil, *result, nil
+}
+
+// bindingSecretData holds an environment variable name and its value for binding-based injection.
+type bindingSecretData struct {
+	envVar string
+	value  []byte
+}
+
+// wipeBindingSecrets zeroes out all secret values in memory.
+func wipeBindingSecrets(secrets []bindingSecretData) {
+	for i := range secrets {
+		for j := range secrets[i].value {
+			secrets[i].value[j] = 0
+		}
+		runtime.KeepAlive(secrets[i].value)
+	}
+}
+
+// wipeEnvSlice clears environment variable string references.
+// NOTE: Due to Go's immutable strings, this cannot truly wipe the underlying
+// memory - it only clears references to allow GC collection. For defense-in-depth,
+// we also use bindingSecretData with []byte for the actual secret values which
+// ARE properly wiped in wipeBindingSecrets. The env slice is cleared as a
+// best-effort secondary measure.
+func wipeEnvSlice(env []string) {
+	for i := range env {
+		env[i] = ""
+	}
+	runtime.KeepAlive(env)
+}
+
+// wipeBuffer zeroes out the contents of a bytes.Buffer.
+// This is used to clear buffers that may contain sensitive data from command output.
+func wipeBuffer(buf *bytes.Buffer) {
+	b := buf.Bytes()
+	for i := range b {
+		b[i] = 0
+	}
+	runtime.KeepAlive(b)
+	buf.Reset()
+}
+
+// buildEnvironmentFromBindings creates environment variables from secret bindings.
+func (s *Server) buildEnvironmentFromBindings(entry *vault.SecretEntry) ([]string, []bindingSecretData, error) {
+	// Start with minimal safe environment
+	var env []string
+	for _, e := range os.Environ() {
+		parts := strings.SplitN(e, "=", 2)
+		if len(parts) == 2 && safeEnvVars[parts[0]] && !blockedEnvVars[parts[0]] {
+			env = append(env, e)
+		}
+	}
+
+	var secrets []bindingSecretData
+
+	// Add secrets as environment variables based on bindings
+	for envVar, fieldName := range entry.Bindings {
+		// Resolve field name (supports aliases)
+		_, field, err := vault.ResolveFieldName(entry.Fields, fieldName)
+		if err != nil {
+			return nil, nil, fmt.Errorf("binding '%s' references non-existent field '%s'", envVar, fieldName)
+		}
+
+		// Validate environment variable name
+		if err := validateEnvName(envVar); err != nil {
+			return nil, nil, fmt.Errorf("invalid environment variable name '%s': %w", envVar, err)
+		}
+
+		// Check for blocked env vars
+		if blockedEnvVars[envVar] {
+			return nil, nil, fmt.Errorf("cannot use blocked environment variable name: %s", envVar)
+		}
+
+		// Check for NUL bytes
+		if strings.ContainsRune(envVar, '\x00') || strings.ContainsRune(field.Value, '\x00') {
+			return nil, nil, fmt.Errorf("NUL byte detected in binding '%s'", envVar)
+		}
+
+		env = append(env, fmt.Sprintf("%s=%s", envVar, field.Value))
+		secrets = append(secrets, bindingSecretData{
+			envVar: envVar,
+			value:  []byte(field.Value),
+		})
+	}
+
+	return env, secrets, nil
+}
+
+// executeCommandWithBindings runs the command with binding-based environment variables.
+func (s *Server) executeCommandWithBindings(ctx context.Context, command string, args []string, env []string, secrets []bindingSecretData, timeout time.Duration) (*SecretRunOutput, error) {
+	// Validate command path
+	if err := validateCommand(command); err != nil {
+		return nil, err
+	}
+
+	// Validate args
+	if err := validateArgs(args); err != nil {
+		return nil, err
+	}
+
+	// Verify command is an absolute path
+	if !filepath.IsAbs(command) {
+		return nil, fmt.Errorf("security error: command must be an absolute path, got: %s", command)
+	}
+
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// Create command
+	cmd := exec.CommandContext(ctx, command, args...)
+	cmd.Env = env
+
+	// Capture output
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	// Execute
+	err := cmd.Run()
+
+	// Convert bindingSecretData to secretData for sanitization
+	secretDataList := make([]secretData, len(secrets))
+	for i, s := range secrets {
+		secretDataList[i] = secretData{
+			key:   s.envVar,
+			value: s.value,
+		}
+	}
+
+	// Sanitize output
+	sanitizer := newOutputSanitizer(secretDataList)
+	sanitizedStdout := sanitizer.sanitize(stdout.Bytes())
+	sanitizedStderr := sanitizer.sanitize(stderr.Bytes())
+
+	// Wipe original buffers that may contain secrets in raw output
+	wipeBuffer(&stdout)
+	wipeBuffer(&stderr)
+
+	// Limit output size
+	const maxOutputSize = 10 * 1024 * 1024
+	if len(sanitizedStdout) > maxOutputSize {
+		sanitizedStdout = sanitizedStdout[:maxOutputSize]
+	}
+	if len(sanitizedStderr) > maxOutputSize {
+		sanitizedStderr = sanitizedStderr[:maxOutputSize]
+	}
+
+	result := &SecretRunOutput{
+		ExitCode: 0,
+		Stdout:   string(sanitizedStdout),
+		Stderr:   string(sanitizedStderr),
+	}
+
+	if err != nil {
+		var exitErr *exec.ExitError
+		switch {
+		case errors.As(err, &exitErr):
+			result.ExitCode = exitErr.ExitCode()
+		case errors.Is(ctx.Err(), context.DeadlineExceeded):
+			return nil, fmt.Errorf("command timed out after %v", timeout)
+		default:
+			return nil, fmt.Errorf("command execution failed: %w", err)
+		}
+	}
+
+	return result, nil
+}
+
 // secretData holds a secret key and its decrypted value
 type secretData struct {
 	key   string
@@ -619,6 +1025,10 @@ func (s *Server) executeCommand(ctx context.Context, command string, args []stri
 	sanitizedStdout := sanitizer.sanitize(stdout.Bytes())
 	sanitizedStderr := sanitizer.sanitize(stderr.Bytes())
 
+	// Wipe original buffers that may contain secrets in raw output
+	wipeBuffer(&stdout)
+	wipeBuffer(&stderr)
+
 	// Limit output size per §6.4 (10MB)
 	const maxOutputSize = 10 * 1024 * 1024
 	if len(sanitizedStdout) > maxOutputSize {
@@ -768,10 +1178,11 @@ func sortReplacementsByLength(replacements []secretReplacement) {
 }
 
 func (s *outputSanitizer) sanitize(data []byte) []byte {
-	if len(s.replacements) == 0 {
-		return data
-	}
-	result := data
+	// Always make a copy to avoid aliasing issues when the original buffer is wiped.
+	// This ensures wipeBuffer on the source doesn't affect the sanitized result.
+	result := make([]byte, len(data))
+	copy(result, data)
+
 	for _, r := range s.replacements {
 		result = bytes.ReplaceAll(result, r.secret, r.placeholder)
 	}
