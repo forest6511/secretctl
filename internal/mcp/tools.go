@@ -1025,6 +1025,10 @@ func (s *Server) executeCommand(ctx context.Context, command string, args []stri
 	sanitizedStdout := sanitizer.sanitize(stdout.Bytes())
 	sanitizedStderr := sanitizer.sanitize(stderr.Bytes())
 
+	// Wipe original buffers that may contain secrets in raw output
+	wipeBuffer(&stdout)
+	wipeBuffer(&stderr)
+
 	// Limit output size per §6.4 (10MB)
 	const maxOutputSize = 10 * 1024 * 1024
 	if len(sanitizedStdout) > maxOutputSize {

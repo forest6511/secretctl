@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -1661,6 +1662,29 @@ func TestWipeEnvSlice(t *testing.T) {
 	for i, e := range env {
 		if e != "" {
 			t.Errorf("env[%d] should be empty, got '%s'", i, e)
+		}
+	}
+}
+
+func TestWipeBuffer(t *testing.T) {
+	buf := bytes.NewBufferString("sensitive-secret-data-12345")
+	originalLen := buf.Len()
+
+	// Get reference to underlying bytes before wipe
+	underlying := buf.Bytes()
+
+	// Wipe the buffer
+	wipeBuffer(buf)
+
+	// Buffer should be reset (empty)
+	if buf.Len() != 0 {
+		t.Errorf("buffer length should be 0, got %d", buf.Len())
+	}
+
+	// The underlying byte slice should be zeroed
+	for i := 0; i < originalLen; i++ {
+		if underlying[i] != 0 {
+			t.Errorf("underlying[%d] should be 0, got %d", i, underlying[i])
 		}
 	}
 }
