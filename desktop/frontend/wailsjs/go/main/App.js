@@ -6,6 +6,14 @@ export function CheckVaultExists() {
   return window['go']['main']['App']['CheckVaultExists']();
 }
 
+export function ClearClipboard() {
+  return window['go']['main']['App']['ClearClipboard']();
+}
+
+export function CopyFieldValue(arg1, arg2) {
+  return window['go']['main']['App']['CopyFieldValue'](arg1, arg2);
+}
+
 export function CopyToClipboard(arg1) {
   return window['go']['main']['App']['CopyToClipboard'](arg1);
 }
@@ -64,4 +72,8 @@ export function UpdateSecret(arg1, arg2, arg3, arg4, arg5) {
 
 export function VerifyAuditLogs() {
   return window['go']['main']['App']['VerifyAuditLogs']();
+}
+
+export function ViewSensitiveField(arg1, arg2) {
+  return window['go']['main']['App']['ViewSensitiveField'](arg1, arg2);
 }

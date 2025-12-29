@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { FieldsSection } from '@/components/FieldsSection'
 import { useToast } from '@/hooks/useToast'
 import {
   ListSecrets, GetSecret, CreateSecret, UpdateSecret,
@@ -289,6 +290,11 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
               <div className="flex items-center gap-2">
                 <Key className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                 <span className="font-medium truncate">{secret.key}</span>
+                {secret.fieldCount > 0 && (
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                    {secret.fieldCount} {secret.fieldCount === 1 ? 'field' : 'fields'}
+                  </span>
+                )}
               </div>
               {secret.tags && secret.tags.length > 0 && (
                 <div className="flex gap-1 mt-1 flex-wrap">
@@ -412,37 +418,47 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
               </div>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Value */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">Value</label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type={showValue ? 'text' : 'password'}
-                    value={selectedSecret.value || ''}
-                    readOnly
-                    className="font-mono"
-                    data-testid="secret-value-display"
-                  />
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setShowValue(!showValue)}
-                    title={showValue ? 'Hide' : 'Show'}
-                    data-testid="toggle-value-visibility"
-                  >
-                    {showValue ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleCopy}
-                    title="Copy (⌘C)"
-                    data-testid="copy-secret-button"
-                  >
-                    <Copy className="w-4 h-4" />
-                  </Button>
+              {/* Fields */}
+              {selectedSecret.fields && Object.keys(selectedSecret.fields).length > 0 ? (
+                <FieldsSection
+                  secretKey={selectedSecret.key}
+                  fields={selectedSecret.fields}
+                  fieldOrder={selectedSecret.fieldOrder || []}
+                  readOnly={true}
+                />
+              ) : selectedSecret.value ? (
+                // Legacy single value fallback
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-muted-foreground">Value</label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type={showValue ? 'text' : 'password'}
+                      value={selectedSecret.value || ''}
+                      readOnly
+                      className="font-mono"
+                      data-testid="secret-value-display"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setShowValue(!showValue)}
+                      title={showValue ? 'Hide' : 'Show'}
+                      data-testid="toggle-value-visibility"
+                    >
+                      {showValue ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleCopy}
+                      title="Copy (⌘C)"
+                      data-testid="copy-secret-button"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
-              </div>
+              ) : null}
 
               {/* URL */}
               {selectedSecret.url && (

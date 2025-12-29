@@ -90,9 +90,32 @@ export namespace main {
 	        this.vaultDir = source["vaultDir"];
 	    }
 	}
+	export class FieldDTO {
+	    value: string;
+	    sensitive: boolean;
+	    aliases?: string[];
+	    kind?: string;
+	    hint?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new FieldDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.value = source["value"];
+	        this.sensitive = source["sensitive"];
+	        this.aliases = source["aliases"];
+	        this.kind = source["kind"];
+	        this.hint = source["hint"];
+	    }
+	}
 	export class Secret {
 	    key: string;
 	    value?: string;
+	    fields?: Record<string, FieldDTO>;
+	    fieldOrder?: string[];
+	    bindings?: Record<string, string>;
 	    notes?: string;
 	    url?: string;
 	    tags?: string[];
@@ -107,17 +130,42 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.key = source["key"];
 	        this.value = source["value"];
+	        this.fields = this.convertValues(source["fields"], FieldDTO, true);
+	        this.fieldOrder = source["fieldOrder"];
+	        this.bindings = source["bindings"];
 	        this.notes = source["notes"];
 	        this.url = source["url"];
 	        this.tags = source["tags"];
 	        this.createdAt = source["createdAt"];
 	        this.updatedAt = source["updatedAt"];
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class SecretListItem {
 	    key: string;
 	    tags?: string[];
 	    updatedAt: string;
+	    fieldCount: number;
+	    bindingCount: number;
+	    hasNotes: boolean;
+	    hasUrl: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new SecretListItem(source);
@@ -128,6 +176,10 @@ export namespace main {
 	        this.key = source["key"];
 	        this.tags = source["tags"];
 	        this.updatedAt = source["updatedAt"];
+	        this.fieldCount = source["fieldCount"];
+	        this.bindingCount = source["bindingCount"];
+	        this.hasNotes = source["hasNotes"];
+	        this.hasUrl = source["hasUrl"];
 	    }
 	}
 
