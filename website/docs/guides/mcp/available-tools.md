@@ -6,7 +6,19 @@ sidebar_position: 4
 
 # Available Tools
 
-secretctl provides four MCP tools for AI agents to work with secrets securely.
+secretctl provides seven MCP tools for AI agents to work with secrets securely.
+
+## Overview
+
+| Tool | Description |
+|------|-------------|
+| `secret_list` | List secret keys with metadata (no values) |
+| `secret_exists` | Check if a secret exists with metadata |
+| `secret_get_masked` | Get masked secret value (e.g., `****WXYZ`) |
+| `secret_run` | Execute command with secrets as environment variables |
+| `secret_list_fields` | List field names for multi-field secrets (no values) |
+| `secret_get_field` | Get non-sensitive field values only |
+| `secret_run_with_bindings` | Execute with predefined environment bindings |
 
 ## secret_list
 
@@ -56,13 +68,13 @@ Check if a secret key exists and return its metadata.
 ```json
 {
   "exists": true,
-  "metadata": {
-    "key": "aws/access_key",
-    "tags": ["aws", "prod"],
-    "has_url": true,
-    "has_notes": false,
-    "expires_at": "2025-12-31T00:00:00Z"
-  }
+  "key": "aws/access_key",
+  "tags": ["aws", "prod"],
+  "has_url": true,
+  "has_notes": false,
+  "expires_at": "2025-12-31T00:00:00Z",
+  "created_at": "2025-01-01T00:00:00Z",
+  "updated_at": "2025-06-15T10:30:00Z"
 }
 ```
 
@@ -84,7 +96,7 @@ Get a masked version of a secret value. Useful for verification.
 {
   "key": "aws/access_key",
   "masked_value": "****WXYZ",
-  "length": 20
+  "value_length": 20
 }
 ```
 
@@ -151,6 +163,125 @@ Secret keys are transformed to environment variable names as follows:
 | `aws/access_key` | `MY_` | `MY_AWS_ACCESS_KEY` |
 | `db-password` | (none) | `DB_PASSWORD` |
 | `api/prod/key` | `APP_` | `APP_API_PROD_KEY` |
+
+## secret_list_fields
+
+List all field names and metadata for a multi-field secret. Does **not** return field values.
+
+**Input Schema:**
+
+```json
+{
+  "key": "database/production"
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "key": "database/production",
+  "fields": [
+    {
+      "name": "host",
+      "sensitive": false,
+      "hint": "Database hostname",
+      "kind": "string"
+    },
+    {
+      "name": "password",
+      "sensitive": true,
+      "hint": "Database password"
+    }
+  ]
+}
+```
+
+## secret_get_field
+
+Get a specific field value from a multi-field secret. **Only non-sensitive fields can be retrieved** (Option D+ policy). Sensitive fields will be rejected.
+
+**Input Schema:**
+
+```json
+{
+  "key": "database/production",
+  "field": "host"
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "key": "database/production",
+  "field": "host",
+  "value": "db.example.com",
+  "sensitive": false
+}
+```
+
+**Error for Sensitive Field:**
+
+```json
+{
+  "error": "field 'password' is marked as sensitive (Option D+ policy)"
+}
+```
+
+## secret_run_with_bindings
+
+Execute a command with environment variables injected based on the secret's predefined bindings. Each binding maps an environment variable name to a field.
+
+**Input Schema:**
+
+```json
+{
+  "key": "database/production",
+  "command": "psql",
+  "args": ["-c", "SELECT 1"],
+  "timeout": "30s"
+}
+```
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `key` | string | yes | Secret key with bindings |
+| `command` | string | yes | Command to execute |
+| `args` | string[] | no | Command arguments |
+| `timeout` | string | no | Execution timeout (default: 5m) |
+
+**How Bindings Work:**
+
+When a secret is created with bindings:
+
+```bash
+secretctl set database/production \
+  --field host=db.example.com \
+  --field port=5432 \
+  --field password \
+  --binding PGHOST=host \
+  --binding PGPORT=port \
+  --binding PGPASSWORD=password
+```
+
+Calling `secret_run_with_bindings` will inject:
+- `PGHOST=db.example.com`
+- `PGPORT=5432`
+- `PGPASSWORD=<password value>`
+
+**Example Response:**
+
+```json
+{
+  "exit_code": 0,
+  "stdout": " ?column? \n----------\n        1\n(1 row)\n",
+  "stderr": "",
+  "sanitized": true
+}
+```
 
 ## Technical Details
 
