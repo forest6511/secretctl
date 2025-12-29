@@ -848,3 +848,86 @@ func (a *App) GetAuditLogStats() (map[string]int, error) {
 
 	return stats, nil
 }
+
+// ============================================================================
+// Template API
+// ============================================================================
+
+// TemplateFieldInfo represents a field in a template
+type TemplateFieldInfo struct {
+	Name      string `json:"name"`
+	Sensitive bool   `json:"sensitive"`
+	Hint      string `json:"hint"`
+}
+
+// TemplateInfo represents a secret template
+type TemplateInfo struct {
+	ID          string              `json:"id"`
+	Name        string              `json:"name"`
+	Description string              `json:"description"`
+	Icon        string              `json:"icon"`
+	Fields      []TemplateFieldInfo `json:"fields"`
+	Bindings    map[string]string   `json:"bindings"`
+}
+
+// GetTemplates returns available secret templates
+func (a *App) GetTemplates() []TemplateInfo {
+	return []TemplateInfo{
+		{
+			ID:          "login",
+			Name:        "Login",
+			Description: "Username and password credentials",
+			Icon:        "key",
+			Fields: []TemplateFieldInfo{
+				{Name: "username", Sensitive: false, Hint: "Username or email"},
+				{Name: "password", Sensitive: true, Hint: "Password"},
+			},
+			Bindings: map[string]string{},
+		},
+		{
+			ID:          "database",
+			Name:        "Database",
+			Description: "Database connection credentials",
+			Icon:        "database",
+			Fields: []TemplateFieldInfo{
+				{Name: "host", Sensitive: false, Hint: "Database hostname"},
+				{Name: "port", Sensitive: false, Hint: "Database port"},
+				{Name: "username", Sensitive: false, Hint: "Database username"},
+				{Name: "password", Sensitive: true, Hint: "Database password"},
+				{Name: "database", Sensitive: false, Hint: "Database name"},
+			},
+			Bindings: map[string]string{
+				"PGHOST":     "host",
+				"PGPORT":     "port",
+				"PGUSER":     "username",
+				"PGPASSWORD": "password",
+				"PGDATABASE": "database",
+			},
+		},
+		{
+			ID:          "api",
+			Name:        "API Key",
+			Description: "API key and secret",
+			Icon:        "globe",
+			Fields: []TemplateFieldInfo{
+				{Name: "api_key", Sensitive: true, Hint: "API key"},
+				{Name: "api_secret", Sensitive: true, Hint: "API secret"},
+			},
+			Bindings: map[string]string{
+				"API_KEY":    "api_key",
+				"API_SECRET": "api_secret",
+			},
+		},
+		{
+			ID:          "ssh",
+			Name:        "SSH Key",
+			Description: "SSH private key and passphrase",
+			Icon:        "terminal",
+			Fields: []TemplateFieldInfo{
+				{Name: "private_key", Sensitive: true, Hint: "SSH private key"},
+				{Name: "passphrase", Sensitive: true, Hint: "Key passphrase (optional)"},
+			},
+			Bindings: map[string]string{},
+		},
+	}
+}
