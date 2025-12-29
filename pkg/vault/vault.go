@@ -252,14 +252,27 @@ type SecretMetadata struct {
 
 // SecretEntry represents a complete secret with all its data
 // This is the primary structure for secret operations
+//
+// Phase 2.5 Multi-Field Support:
+// - Fields: map of field name to Field struct (replaces single Value)
+// - Bindings: environment variable name to field name mapping
+// - Schema: reserved for Phase 3 schema validation
+//
+// Backward Compatibility:
+// - Value field is deprecated but still supported for reading legacy secrets
+// - Legacy secrets are auto-converted to Fields["value"] on read
+// - SetSecret uses Fields; Value is ignored if Fields is set
 type SecretEntry struct {
-	Key       string          // Secret key name
-	Value     []byte          // Secret value
-	Metadata  *SecretMetadata // Encrypted metadata (notes, url)
-	Tags      []string        // Plaintext: searchable tags
-	ExpiresAt *time.Time      // Plaintext: expiration date
-	CreatedAt time.Time       // Creation timestamp
-	UpdatedAt time.Time       // Last update timestamp
+	Key       string            // Secret key name
+	Value     []byte            // Deprecated: use Fields instead. Kept for backward compatibility.
+	Fields    map[string]Field  // Multi-field values (Phase 2.5+)
+	Bindings  map[string]string // Environment variable bindings: env_var_name -> field_name
+	Schema    string            // Reserved for Phase 3 schema validation
+	Metadata  *SecretMetadata   // Encrypted metadata (notes, url)
+	Tags      []string          // Plaintext: searchable tags
+	ExpiresAt *time.Time        // Plaintext: expiration date
+	CreatedAt time.Time         // Creation timestamp
+	UpdatedAt time.Time         // Last update timestamp
 }
 
 // Vault manages the entire secret storage
@@ -514,6 +527,14 @@ func (v *Vault) Unlock(masterPassword string) error {
 	v.dek = dek
 	v.db = db
 
+	// 6. Run schema migrations if needed
+	if err := migrateSchema(db); err != nil {
+		v.dek = nil
+		v.db = nil
+		db.Close()
+		return fmt.Errorf("vault: schema migration failed: %w", err)
+	}
+
 	// Clear lock state on successful unlock
 	if err := v.clearLockState(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to clear lock state: %v\n", err)
@@ -624,21 +645,47 @@ func (v *Vault) createTables(db *sql.DB) error {
 
 	// secrets table (hybrid approach: encrypted metadata JSON + plaintext search fields)
 	// Per project-proposal-ja.md Phase 0: メタデータ対応 (notes/url/tags/expires_at)
-	// - encrypted_key, encrypted_value, encrypted_metadata: nonce prepended
+	// Per ADR-002 Phase 2.5: Multi-field secrets support
+	// - encrypted_key: encrypted key name (nonce prepended)
+	// - encrypted_value: legacy single value (nonce prepended) - kept for backward compatibility
+	// - encrypted_fields: encrypted JSON map of Field structs (Phase 2.5+)
+	// - encrypted_bindings: encrypted JSON map of env var bindings (Phase 2.5+)
+	// - encrypted_metadata: encrypted notes/url JSON
+	// - schema: plaintext schema name (reserved for Phase 3)
 	// - tags, expires_at: plaintext for searchability
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS secrets (
 			id INTEGER PRIMARY KEY,
 			key_hash TEXT UNIQUE NOT NULL,
 			encrypted_key BLOB NOT NULL,
-			encrypted_value BLOB NOT NULL,
+			encrypted_value BLOB,
+			encrypted_fields BLOB,
+			encrypted_bindings BLOB,
 			encrypted_metadata BLOB,
+			schema TEXT,
 			tags TEXT,
 			expires_at TIMESTAMP,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)
 	`)
+	if err != nil {
+		return err
+	}
+
+	// schema_version table for migration tracking
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS schema_version (
+			version INTEGER PRIMARY KEY,
+			migrated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		return err
+	}
+
+	// Record current schema version for new vaults
+	_, err = db.Exec("INSERT OR REPLACE INTO schema_version (version) VALUES (?)", CurrentSchemaVersion)
 	if err != nil {
 		return err
 	}
@@ -723,15 +770,6 @@ func isValidKeyChar(r rune) bool {
 		r == '-' || r == '_' || r == '.' || r == '/'
 }
 
-// validateValueSize validates the size of a secret value
-func validateValueSize(value []byte) error {
-	if len(value) > MaxValueSize {
-		return fmt.Errorf("%w: %d bytes exceeds maximum of %d bytes",
-			ErrValueTooLarge, len(value), MaxValueSize)
-	}
-	return nil
-}
-
 // tagRegex validates tag format: alphanumeric, underscore, hyphen only
 var tagRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
@@ -792,6 +830,12 @@ func validateMetadata(metadata *SecretMetadata, tags []string, expiresAt *time.T
 
 // SetSecret saves or updates a secret with all its data.
 // Uses hybrid approach: encrypted metadata JSON blob + plaintext search fields.
+//
+// Multi-field support (Phase 2.5):
+//   - If entry.Fields is set, it will be used (preferred)
+//   - If entry.Fields is nil but entry.Value is set, Value is converted to Fields["value"]
+//   - Both legacy format (encrypted_value) and new format (encrypted_fields) are stored
+//     for backward compatibility during transition period
 func (v *Vault) SetSecret(key string, entry *SecretEntry) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -807,10 +851,45 @@ func (v *Vault) SetSecret(key string, entry *SecretEntry) error {
 		return err
 	}
 
-	// Validate value size
-	if err := validateValueSize(entry.Value); err != nil {
-		_ = v.audit.LogError(audit.OpSecretSet, audit.SourceCLI, key, "VALUE_TOO_LARGE", err.Error())
-		return err
+	// Normalize Fields: if Fields is nil but Value is set, convert to Fields["value"]
+	fields := entry.Fields
+	if fields == nil && len(entry.Value) > 0 {
+		fields = ConvertSingleValueToFields(entry.Value)
+	}
+
+	// Validate fields (multi-field format)
+	if fields != nil {
+		if err := ValidateFields(fields); err != nil {
+			_ = v.audit.LogError(audit.OpSecretSet, audit.SourceCLI, key, "INVALID_FIELDS", err.Error())
+			return err
+		}
+	}
+
+	// Validate bindings if present
+	if entry.Bindings != nil {
+		if len(fields) == 0 {
+			_ = v.audit.LogError(audit.OpSecretSet, audit.SourceCLI, key, "INVALID_BINDINGS", "bindings require fields")
+			return fmt.Errorf("%w: bindings require fields", ErrBindingFieldNotFound)
+		}
+		if err := ValidateBindings(entry.Bindings, fields); err != nil {
+			_ = v.audit.LogError(audit.OpSecretSet, audit.SourceCLI, key, "INVALID_BINDINGS", err.Error())
+			return err
+		}
+	}
+
+	// Calculate total data size for disk space check
+	dataSize := len(key)
+	for name, field := range fields {
+		dataSize += len(name) + len(field.Value) + len(field.Kind) + len(field.Hint)
+		for _, alias := range field.Aliases {
+			dataSize += len(alias)
+		}
+	}
+	for envVar, fieldName := range entry.Bindings {
+		dataSize += len(envVar) + len(fieldName)
+	}
+	if entry.Metadata != nil {
+		dataSize += len(entry.Metadata.Notes) + len(entry.Metadata.URL)
 	}
 
 	// Validate metadata per requirements-ja.md §2.5
@@ -820,10 +899,6 @@ func (v *Vault) SetSecret(key string, entry *SecretEntry) error {
 	}
 
 	// Check disk space before write
-	dataSize := len(key) + len(entry.Value)
-	if entry.Metadata != nil {
-		dataSize += len(entry.Metadata.Notes) + len(entry.Metadata.URL)
-	}
 	if err := v.checkDiskSpaceForWrite(dataSize); err != nil {
 		_ = v.audit.LogError(audit.OpSecretSet, audit.SourceCLI, key, "DISK_FULL", err.Error())
 		return err
@@ -839,11 +914,45 @@ func (v *Vault) SetSecret(key string, entry *SecretEntry) error {
 		return fmt.Errorf("vault: failed to encrypt key: %w", err)
 	}
 
-	// Encrypt value (nonce prepended)
-	encryptedValue, err := v.encryptWithNonce(entry.Value)
-	if err != nil {
-		_ = v.audit.LogError(audit.OpSecretSet, audit.SourceCLI, key, "ENCRYPT_FAILED", err.Error())
-		return fmt.Errorf("vault: failed to encrypt value: %w", err)
+	// Encrypt legacy value for backward compatibility
+	// Use the "value" field if it exists, otherwise nil
+	var encryptedValue []byte
+	if defaultValue := GetDefaultFieldValue(fields); defaultValue != "" {
+		encryptedValue, err = v.encryptWithNonce([]byte(defaultValue))
+		if err != nil {
+			_ = v.audit.LogError(audit.OpSecretSet, audit.SourceCLI, key, "ENCRYPT_FAILED", err.Error())
+			return fmt.Errorf("vault: failed to encrypt value: %w", err)
+		}
+	}
+
+	// Encrypt fields as JSON blob (nonce prepended)
+	var encryptedFields []byte
+	if len(fields) > 0 {
+		fieldsJSON, err := json.Marshal(fields)
+		if err != nil {
+			_ = v.audit.LogError(audit.OpSecretSet, audit.SourceCLI, key, "MARSHAL_FAILED", err.Error())
+			return fmt.Errorf("vault: failed to marshal fields: %w", err)
+		}
+		encryptedFields, err = v.encryptWithNonce(fieldsJSON)
+		if err != nil {
+			_ = v.audit.LogError(audit.OpSecretSet, audit.SourceCLI, key, "ENCRYPT_FAILED", "fields: "+err.Error())
+			return fmt.Errorf("vault: failed to encrypt fields: %w", err)
+		}
+	}
+
+	// Encrypt bindings as JSON blob (nonce prepended)
+	var encryptedBindings []byte
+	if len(entry.Bindings) > 0 {
+		bindingsJSON, err := json.Marshal(entry.Bindings)
+		if err != nil {
+			_ = v.audit.LogError(audit.OpSecretSet, audit.SourceCLI, key, "MARSHAL_FAILED", err.Error())
+			return fmt.Errorf("vault: failed to marshal bindings: %w", err)
+		}
+		encryptedBindings, err = v.encryptWithNonce(bindingsJSON)
+		if err != nil {
+			_ = v.audit.LogError(audit.OpSecretSet, audit.SourceCLI, key, "ENCRYPT_FAILED", "bindings: "+err.Error())
+			return fmt.Errorf("vault: failed to encrypt bindings: %w", err)
+		}
 	}
 
 	// Encrypt metadata as JSON blob (nonce prepended)
@@ -883,17 +992,21 @@ func (v *Vault) SetSecret(key string, entry *SecretEntry) error {
 	defer tx.Rollback()
 
 	// UPSERT: update if key exists, insert otherwise
+	// Store both legacy format (encrypted_value) and new format (encrypted_fields)
 	_, err = tx.Exec(`
-		INSERT INTO secrets (key_hash, encrypted_key, encrypted_value, encrypted_metadata, tags, expires_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		INSERT INTO secrets (key_hash, encrypted_key, encrypted_value, encrypted_fields, encrypted_bindings, encrypted_metadata, schema, tags, expires_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(key_hash) DO UPDATE SET
 			encrypted_key = excluded.encrypted_key,
 			encrypted_value = excluded.encrypted_value,
+			encrypted_fields = excluded.encrypted_fields,
+			encrypted_bindings = excluded.encrypted_bindings,
 			encrypted_metadata = excluded.encrypted_metadata,
+			schema = excluded.schema,
 			tags = excluded.tags,
 			expires_at = excluded.expires_at,
 			updated_at = CURRENT_TIMESTAMP
-	`, keyHash, encryptedKey, encryptedValue, encryptedMetadata, tagsStr, expiresAt)
+	`, keyHash, encryptedKey, encryptedValue, encryptedFields, encryptedBindings, encryptedMetadata, entry.Schema, tagsStr, expiresAt)
 	if err != nil {
 		_ = v.audit.LogError(audit.OpSecretSet, audit.SourceCLI, key, "DB_ERROR", err.Error())
 		return fmt.Errorf("vault: failed to save secret: %w", err)
@@ -910,6 +1023,12 @@ func (v *Vault) SetSecret(key string, entry *SecretEntry) error {
 }
 
 // GetSecret retrieves a complete secret entry by key name
+//
+// Multi-field support (Phase 2.5):
+// - Prefers encrypted_fields if present (new format)
+// - Falls back to encrypted_value if encrypted_fields is NULL (legacy format)
+// - Legacy data is auto-converted to Fields["value"]
+// - Value field is populated for backward compatibility
 func (v *Vault) GetSecret(key string) (*SecretEntry, error) {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
@@ -922,17 +1041,18 @@ func (v *Vault) GetSecret(key string) (*SecretEntry, error) {
 	// Compute key hash (HMAC-SHA256 with DEK)
 	keyHash := v.hashKey(key)
 
-	// Get all fields from database
-	var encryptedValue, encryptedMetadata []byte
+	// Get all fields from database (including new multi-field columns)
+	var encryptedValue, encryptedFields, encryptedBindings, encryptedMetadata []byte
+	var schema sql.NullString
 	var tagsStr sql.NullString
 	var expiresAt sql.NullTime
 	var createdAt, updatedAt time.Time
 
 	err := v.db.QueryRow(`
-		SELECT encrypted_value, encrypted_metadata, tags, expires_at, created_at, updated_at
+		SELECT encrypted_value, encrypted_fields, encrypted_bindings, encrypted_metadata, schema, tags, expires_at, created_at, updated_at
 		FROM secrets WHERE key_hash = ?`,
 		keyHash,
-	).Scan(&encryptedValue, &encryptedMetadata, &tagsStr, &expiresAt, &createdAt, &updatedAt)
+	).Scan(&encryptedValue, &encryptedFields, &encryptedBindings, &encryptedMetadata, &schema, &tagsStr, &expiresAt, &createdAt, &updatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			_ = v.audit.LogError(audit.OpSecretGet, audit.SourceCLI, key, "NOT_FOUND", "secret not found")
@@ -941,18 +1061,54 @@ func (v *Vault) GetSecret(key string) (*SecretEntry, error) {
 		return nil, fmt.Errorf("vault: failed to read secret: %w", err)
 	}
 
-	// Decrypt value (nonce is prepended)
-	plainValue, err := v.decryptWithNonce(encryptedValue)
-	if err != nil {
-		_ = v.audit.LogError(audit.OpSecretGet, audit.SourceCLI, key, "DECRYPT_FAILED", err.Error())
-		return nil, fmt.Errorf("vault: failed to decrypt secret: %w", err)
-	}
-
 	entry := &SecretEntry{
 		Key:       key,
-		Value:     plainValue,
 		CreatedAt: createdAt,
 		UpdatedAt: updatedAt,
+	}
+
+	// Decrypt fields (new format) or value (legacy format)
+	if len(encryptedFields) > 0 {
+		// New multi-field format
+		fieldsJSON, err := v.decryptWithNonce(encryptedFields)
+		if err != nil {
+			_ = v.audit.LogError(audit.OpSecretGet, audit.SourceCLI, key, "DECRYPT_FAILED", err.Error())
+			return nil, fmt.Errorf("vault: failed to decrypt fields: %w", err)
+		}
+		var fields map[string]Field
+		if err := json.Unmarshal(fieldsJSON, &fields); err != nil {
+			return nil, fmt.Errorf("vault: failed to unmarshal fields: %w", err)
+		}
+		entry.Fields = fields
+		// Populate legacy Value field for backward compatibility
+		entry.Value = []byte(GetDefaultFieldValue(fields))
+	} else if len(encryptedValue) > 0 {
+		// Legacy single-value format - auto-convert to Fields["value"]
+		plainValue, err := v.decryptWithNonce(encryptedValue)
+		if err != nil {
+			_ = v.audit.LogError(audit.OpSecretGet, audit.SourceCLI, key, "DECRYPT_FAILED", err.Error())
+			return nil, fmt.Errorf("vault: failed to decrypt secret: %w", err)
+		}
+		entry.Value = plainValue
+		entry.Fields = ConvertSingleValueToFields(plainValue)
+	}
+
+	// Decrypt bindings if present
+	if len(encryptedBindings) > 0 {
+		bindingsJSON, err := v.decryptWithNonce(encryptedBindings)
+		if err != nil {
+			return nil, fmt.Errorf("vault: failed to decrypt bindings: %w", err)
+		}
+		var bindings map[string]string
+		if err := json.Unmarshal(bindingsJSON, &bindings); err != nil {
+			return nil, fmt.Errorf("vault: failed to unmarshal bindings: %w", err)
+		}
+		entry.Bindings = bindings
+	}
+
+	// Set schema if present
+	if schema.Valid {
+		entry.Schema = schema.String
 	}
 
 	// Decrypt metadata if present
@@ -1080,14 +1236,19 @@ func (v *Vault) DeleteSecret(key string) error {
 // scanSecretEntryRowWithMetadata scans a row including metadata (but NOT secret value).
 // This decrypts key name and metadata, but never touches the secret value.
 // Use this for list operations that need metadata presence (HasNotes, HasURL).
+//
+// Multi-field support (Phase 2.5):
+// - Also reads schema column for Phase 3 compatibility
+// - Does NOT decrypt fields/bindings (not needed for list operations)
 func (v *Vault) scanSecretEntryRowWithMetadata(rows *sql.Rows) (*SecretEntry, error) {
 	var encryptedKey []byte
 	var encryptedMetadata []byte
+	var schema sql.NullString
 	var tagsStr sql.NullString
 	var expiresAt sql.NullTime
 	var createdAt, updatedAt time.Time
 
-	if err := rows.Scan(&encryptedKey, &encryptedMetadata, &tagsStr, &expiresAt,
+	if err := rows.Scan(&encryptedKey, &encryptedMetadata, &schema, &tagsStr, &expiresAt,
 		&createdAt, &updatedAt); err != nil {
 		return nil, fmt.Errorf("vault: failed to scan row: %w", err)
 	}
@@ -1102,6 +1263,11 @@ func (v *Vault) scanSecretEntryRowWithMetadata(rows *sql.Rows) (*SecretEntry, er
 		Key:       string(keyBytes),
 		CreatedAt: createdAt,
 		UpdatedAt: updatedAt,
+	}
+
+	// Set schema if present
+	if schema.Valid {
+		entry.Schema = schema.String
 	}
 
 	// Decrypt metadata if present (small data - notes/URL, not credentials)
@@ -1146,7 +1312,7 @@ func (v *Vault) ListSecretsWithMetadata() ([]*SecretEntry, error) {
 	}
 
 	rows, err := v.db.Query(`
-		SELECT encrypted_key, encrypted_metadata, tags, expires_at, created_at, updated_at
+		SELECT encrypted_key, encrypted_metadata, schema, tags, expires_at, created_at, updated_at
 		FROM secrets
 		ORDER BY created_at`)
 	if err != nil {
@@ -1182,9 +1348,9 @@ func (v *Vault) ListSecretsByTag(tag string) ([]*SecretEntry, error) {
 
 	// Query with tag filter (tags stored as JSON array, search for the tag string)
 	// This searches for the tag within the JSON array string
-	// Include encrypted_metadata for HasNotes/HasURL support
+	// Include encrypted_metadata and schema for HasNotes/HasURL support and Phase 3
 	rows, err := v.db.Query(`
-		SELECT encrypted_key, encrypted_metadata, tags, expires_at, created_at, updated_at
+		SELECT encrypted_key, encrypted_metadata, schema, tags, expires_at, created_at, updated_at
 		FROM secrets
 		WHERE tags LIKE ?
 		ORDER BY created_at`,
@@ -1228,9 +1394,9 @@ func (v *Vault) ListExpiringSecrets(within time.Duration) ([]*SecretEntry, error
 
 	deadline := time.Now().Add(within)
 
-	// Include encrypted_metadata for HasNotes/HasURL support
+	// Include encrypted_metadata and schema for HasNotes/HasURL support and Phase 3
 	rows, err := v.db.Query(`
-		SELECT encrypted_key, encrypted_metadata, tags, expires_at, created_at, updated_at
+		SELECT encrypted_key, encrypted_metadata, schema, tags, expires_at, created_at, updated_at
 		FROM secrets
 		WHERE expires_at IS NOT NULL AND expires_at <= ?
 		ORDER BY expires_at`,
