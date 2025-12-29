@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -49,6 +50,15 @@ var (
 	setURL     string
 	setTags    string
 	setExpires string
+
+	// Multi-field support (Phase 2.5b)
+	setFields   []string // --field name=value (can be repeated)
+	setBindings []string // --binding ENV=field (can be repeated)
+	setTemplate string   // --template name
+
+	// Get field support
+	getField      string // --field name (get specific field)
+	getShowFields bool   // --fields (list all fields)
 )
 
 // Metadata flags for list command
@@ -98,12 +108,19 @@ func init() {
 	setCmd.Flags().StringVar(&setTags, "tags", "", "Comma-separated tags (e.g., dev,api)")
 	setCmd.Flags().StringVar(&setExpires, "expires", "", "Expiration duration (e.g., 30d, 1y)")
 
+	// Multi-field flags for set command (Phase 2.5b)
+	setCmd.Flags().StringArrayVar(&setFields, "field", nil, "Set field value (name=value, can be repeated)")
+	setCmd.Flags().StringArrayVar(&setBindings, "binding", nil, "Set env binding (ENV_VAR=field, can be repeated)")
+	setCmd.Flags().StringVar(&setTemplate, "template", "", "Use template (login, database, api, ssh)")
+
 	// Add metadata flags to list command
 	listCmd.Flags().StringVar(&listTag, "tag", "", "Filter by tag")
 	listCmd.Flags().StringVar(&listExpiring, "expiring", "", "Show secrets expiring within duration (e.g., 7d)")
 
 	// Add metadata flags to get command
 	getCmd.Flags().BoolVar(&getShowMetadata, "show-metadata", false, "Show metadata with the secret")
+	getCmd.Flags().StringVar(&getField, "field", "", "Get specific field value")
+	getCmd.Flags().BoolVar(&getShowFields, "fields", false, "List all field names")
 
 	// Add audit subcommands
 	auditCmd.AddCommand(auditListCmd)
@@ -189,8 +206,19 @@ var initCmd = &cobra.Command{
 // setCmd sets a secret value
 var setCmd = &cobra.Command{
 	Use:   "set [key]",
-	Short: "Sets a secret value from standard input",
-	Args:  cobra.ExactArgs(1),
+	Short: "Sets a secret value from standard input or fields",
+	Long: `Sets a secret value. Supports two modes:
+
+1. Single value mode (default):
+   secretctl set mykey
+   # Enter value interactively
+
+2. Multi-field mode (--field or --template):
+   secretctl set mykey --field username=admin --field password=secret
+   secretctl set mykey --template database
+   
+Available templates: login, database, api, ssh`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		key := args[0]
 
@@ -200,28 +228,35 @@ var setCmd = &cobra.Command{
 		}
 		defer v.Lock()
 
-		// 2. Read secret value from stdin
-		// Use io.ReadAll to support multi-line and binary secrets
-		// For interactive input, user can enter value and press Ctrl+D (Unix) or Ctrl+Z (Windows)
-		fmt.Print("Enter secret value (Ctrl+D to finish): ")
-		valueBytes, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return fmt.Errorf("failed to read secret value: %w", err)
-		}
+		// 2. Build SecretEntry
+		entry := &vault.SecretEntry{}
 
-		// Trim trailing newline for interactive single-line input convenience
-		// but preserve content for multi-line/binary secrets
-		value := valueBytes
-		if len(value) > 0 && value[len(value)-1] == '\n' {
-			value = value[:len(value)-1]
-		}
-		if len(value) > 0 && value[len(value)-1] == '\r' {
-			value = value[:len(value)-1]
-		}
+		// Check if using multi-field mode
+		if setTemplate != "" || len(setFields) > 0 {
+			// Multi-field mode
+			fields, bindings, err := buildFieldsFromFlags()
+			if err != nil {
+				return err
+			}
+			entry.Fields = fields
+			entry.Bindings = bindings
+		} else {
+			// Legacy single-value mode
+			fmt.Print("Enter secret value (Ctrl+D to finish): ")
+			valueBytes, err := io.ReadAll(os.Stdin)
+			if err != nil {
+				return fmt.Errorf("failed to read secret value: %w", err)
+			}
 
-		// 3. Build SecretEntry
-		entry := &vault.SecretEntry{
-			Value: value,
+			// Trim trailing newline for interactive single-line input convenience
+			value := valueBytes
+			if len(value) > 0 && value[len(value)-1] == '\n' {
+				value = value[:len(value)-1]
+			}
+			if len(value) > 0 && value[len(value)-1] == '\r' {
+				value = value[:len(value)-1]
+			}
+			entry.Value = value
 		}
 
 		// Add metadata if any flags are set
@@ -247,21 +282,186 @@ var setCmd = &cobra.Command{
 			entry.ExpiresAt = &expiresAt
 		}
 
-		// 4. Save secret
+		// 3. Save secret
 		if err := v.SetSecret(key, entry); err != nil {
 			return fmt.Errorf("failed to set secret: %w", err)
 		}
 
-		fmt.Printf("Secret '%s' saved successfully\n", key)
+		if entry.Fields != nil {
+			fmt.Printf("Secret '%s' saved with %d fields\n", key, len(entry.Fields))
+		} else {
+			fmt.Printf("Secret '%s' saved successfully\n", key)
+		}
 		return nil
 	},
+}
+
+// buildFieldsFromFlags builds Fields and Bindings from CLI flags.
+func buildFieldsFromFlags() (fields map[string]vault.Field, bindings map[string]string, err error) {
+	fields = make(map[string]vault.Field)
+	bindings = make(map[string]string)
+
+	// If template is specified, prompt for template fields
+	if setTemplate != "" {
+		if err := promptTemplateFields(fields); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	// Add/override fields from --field flags
+	if err := parseFieldFlags(fields); err != nil {
+		return nil, nil, err
+	}
+
+	// Add bindings from --binding flags
+	if err := parseBindingFlags(fields, bindings); err != nil {
+		return nil, nil, err
+	}
+
+	if len(fields) == 0 {
+		return nil, nil, fmt.Errorf("no fields specified (use --field or --template)")
+	}
+
+	return fields, bindings, nil
+}
+
+// promptTemplateFields prompts user for template fields interactively
+func promptTemplateFields(fields map[string]vault.Field) error {
+	template, ok := BuiltinTemplates[setTemplate]
+	if !ok {
+		return fmt.Errorf("unknown template: %s (available: %v)", setTemplate, ListTemplates())
+	}
+
+	fmt.Printf("Using template: %s (%s)\n", template.Name, template.Description)
+
+	for _, tf := range template.Fields {
+		value, err := readTemplateField(tf)
+		if err != nil {
+			return err
+		}
+
+		if value == "" && tf.Required {
+			return fmt.Errorf("field %q is required", tf.Name)
+		}
+
+		if value != "" {
+			fields[tf.Name] = vault.Field{
+				Value:     value,
+				Sensitive: tf.Sensitive,
+				Kind:      tf.Kind,
+			}
+		}
+	}
+	return nil
+}
+
+// readTemplateField reads a single template field from user input
+func readTemplateField(tf TemplateField) (string, error) {
+	prompt := tf.Prompt
+	if !tf.Required {
+		prompt += " (optional)"
+	}
+
+	switch {
+	case tf.Sensitive && tf.Name == "private_key":
+		// Multi-line input for private keys (read until EOF)
+		fmt.Printf("%s (paste, then Ctrl+D):\n", prompt)
+		valueBytes, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return "", fmt.Errorf("failed to read input: %w", err)
+		}
+		value := strings.TrimSuffix(string(valueBytes), "\n")
+		return strings.TrimSuffix(value, "\r"), nil
+
+	case tf.Sensitive:
+		// Secure password input (no echo) for sensitive fields
+		fmt.Printf("%s: ", prompt)
+		if isTerminal(int(os.Stdin.Fd())) {
+			passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
+			fmt.Println() // Add newline after hidden input
+			if err != nil {
+				return "", fmt.Errorf("failed to read password: %w", err)
+			}
+			return string(passwordBytes), nil
+		}
+		// Fallback for piped input
+		return readLine()
+
+	default:
+		// Single-line input for non-sensitive fields
+		fmt.Printf("%s: ", prompt)
+		return readLine()
+	}
+}
+
+// readLine reads a single line from stdin, trimming trailing newline
+func readLine() (string, error) {
+	reader := bufio.NewReader(os.Stdin)
+	line, err := reader.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return "", fmt.Errorf("failed to read input: %w", err)
+	}
+	value := strings.TrimSuffix(line, "\n")
+	return strings.TrimSuffix(value, "\r"), nil
+}
+
+// parseFieldFlags parses --field flags into fields map
+func parseFieldFlags(fields map[string]vault.Field) error {
+	for _, f := range setFields {
+		parts := strings.SplitN(f, "=", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf("invalid field format %q (expected name=value)", f)
+		}
+		name, value := parts[0], parts[1]
+		fields[name] = vault.Field{
+			Value:     value,
+			Sensitive: true, // Default to sensitive
+		}
+	}
+	return nil
+}
+
+// parseBindingFlags parses --binding flags into bindings map
+func parseBindingFlags(fields map[string]vault.Field, bindings map[string]string) error {
+	for _, b := range setBindings {
+		parts := strings.SplitN(b, "=", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf("invalid binding format %q (expected ENV_VAR=field)", b)
+		}
+		envVar, fieldName := parts[0], parts[1]
+
+		// Validate that the referenced field exists
+		if _, exists := fields[fieldName]; !exists {
+			return fmt.Errorf("binding %q references non-existent field %q", envVar, fieldName)
+		}
+		bindings[envVar] = fieldName
+	}
+	return nil
+}
+
+// isTerminal returns true if the file descriptor is a terminal
+func isTerminal(fd int) bool {
+	return term.IsTerminal(fd)
 }
 
 // getCmd retrieves a secret value
 var getCmd = &cobra.Command{
 	Use:   "get [key]",
-	Short: "Gets a secret value",
-	Args:  cobra.ExactArgs(1),
+	Short: "Gets a secret value or field",
+	Long: `Gets a secret value. Supports multiple modes:
+
+1. Single value mode (default):
+   secretctl get mykey
+   # Outputs the value (or Fields["value"] for multi-field secrets)
+
+2. Specific field mode:
+   secretctl get mykey --field password
+   # Outputs the password field value
+
+3. List fields mode:
+   secretctl get mykey --fields
+   # Lists all field names`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		key := args[0]
 
@@ -271,15 +471,66 @@ var getCmd = &cobra.Command{
 		}
 		defer v.Lock()
 
-		// 2. Get secret (always returns SecretEntry now)
+		// 2. Get secret
 		entry, err := v.GetSecret(key)
 		if err != nil {
 			return fmt.Errorf("failed to get secret: %w", err)
 		}
 
+		// 3. Handle different output modes
+		if getShowFields {
+			// List all field names
+			if len(entry.Fields) == 0 {
+				fmt.Println("(no fields - legacy single-value secret)")
+				return nil
+			}
+			for name, field := range entry.Fields {
+				sensitive := ""
+				if field.Sensitive {
+					sensitive = " [sensitive]"
+				}
+				fmt.Printf("%s%s\n", name, sensitive)
+			}
+			return nil
+		}
+
+		if getField != "" {
+			// Get specific field
+			if len(entry.Fields) == 0 {
+				return fmt.Errorf("secret has no fields (legacy single-value secret)")
+			}
+			fieldName, field, err := vault.ResolveFieldName(entry.Fields, getField)
+			if err != nil {
+				return fmt.Errorf("field %q not found", getField)
+			}
+			_ = fieldName // resolved name (for alias case)
+			os.Stdout.WriteString(field.Value)
+			fmt.Println()
+			return nil
+		}
+
 		if getShowMetadata {
-			// Print value
-			fmt.Printf("Value: %s\n", string(entry.Value))
+			// Show full metadata
+			if len(entry.Fields) > 0 && !vault.IsSingleFieldSecret(entry.Fields) {
+				// Multi-field secret
+				fmt.Println("Fields:")
+				for name, field := range entry.Fields {
+					if field.Sensitive {
+						fmt.Printf("  %s: [sensitive]\n", name)
+					} else {
+						fmt.Printf("  %s: %s\n", name, field.Value)
+					}
+				}
+				if len(entry.Bindings) > 0 {
+					fmt.Println("Bindings:")
+					for env, field := range entry.Bindings {
+						fmt.Printf("  %s -> %s\n", env, field)
+					}
+				}
+			} else {
+				// Single value
+				fmt.Printf("Value: %s\n", string(entry.Value))
+			}
 
 			// Print encrypted metadata if present
 			if entry.Metadata != nil {
@@ -300,9 +551,19 @@ var getCmd = &cobra.Command{
 			fmt.Printf("Created: %s\n", entry.CreatedAt.Format(time.RFC3339))
 			fmt.Printf("Updated: %s\n", entry.UpdatedAt.Format(time.RFC3339))
 		} else {
-			// Write value to stdout (no newline, pipe-friendly)
-			os.Stdout.Write(entry.Value)
-			fmt.Println()
+			// Default: output value (or default field for multi-field)
+			if len(entry.Fields) > 0 && vault.IsSingleFieldSecret(entry.Fields) {
+				// Single-field secret, output the value
+				os.Stdout.WriteString(vault.GetDefaultFieldValue(entry.Fields))
+				fmt.Println()
+			} else if len(entry.Fields) > 0 {
+				// Multi-field secret without --field flag - return error for script safety
+				return fmt.Errorf("multi-field secret with %d fields; use --field <name> to get specific field or --fields to list", len(entry.Fields))
+			} else {
+				// Legacy format
+				os.Stdout.Write(entry.Value)
+				fmt.Println()
+			}
 		}
 		return nil
 	},
