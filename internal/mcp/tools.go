@@ -1178,10 +1178,11 @@ func sortReplacementsByLength(replacements []secretReplacement) {
 }
 
 func (s *outputSanitizer) sanitize(data []byte) []byte {
-	if len(s.replacements) == 0 {
-		return data
-	}
-	result := data
+	// Always make a copy to avoid aliasing issues when the original buffer is wiped.
+	// This ensures wipeBuffer on the source doesn't affect the sanitized result.
+	result := make([]byte, len(data))
+	copy(result, data)
+
 	for _, r := range s.replacements {
 		result = bytes.ReplaceAll(result, r.secret, r.placeholder)
 	}
