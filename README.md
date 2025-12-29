@@ -273,6 +273,9 @@ SECRETCTL_PASSWORD=your-password secretctl mcp-server
 - `secret_exists` — Check if a secret exists with metadata
 - `secret_get_masked` — Get masked value (e.g., `****WXYZ`)
 - `secret_run` — Execute commands with secrets as environment variables
+- `secret_list_fields` — List field names for multi-field secrets (no values)
+- `secret_get_field` — Get non-sensitive field values only
+- `secret_run_with_bindings` — Execute with predefined environment bindings
 
 **Configure in Claude Code** (`~/.claude.json`):
 ```json

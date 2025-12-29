@@ -20,6 +20,9 @@ The secretctl MCP server implements a security-first design where **AI agents ne
 | `secret_exists` | Check if a secret exists with metadata |
 | `secret_get_masked` | Get masked secret value (e.g., `****WXYZ`) |
 | `secret_run` | Execute command with secrets as environment variables |
+| `secret_list_fields` | List field names for multi-field secrets (no values) |
+| `secret_get_field` | Get non-sensitive field values only |
+| `secret_run_with_bindings` | Execute with predefined environment bindings |
 
 ---
 
@@ -434,9 +437,223 @@ Sanitized: "Connected to database with password [REDACTED:DB_PASSWORD]"
 
 ---
 
+## secret_list_fields
+
+List all field names and metadata for a multi-field secret. Returns field names, sensitivity flags, hints, and aliases. Does NOT return field values.
+
+### Input Schema
+
+```json
+{
+  "key": "string"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `key` | string | Yes | The secret key to list fields for |
+
+### Output Schema
+
+```json
+{
+  "key": "string",
+  "fields": [
+    {
+      "name": "string",
+      "sensitive": "boolean",
+      "hint": "string (optional)",
+      "kind": "string (optional)",
+      "aliases": ["string"]
+    }
+  ]
+}
+```
+
+### Examples
+
+**List fields for a database secret:**
+
+```json
+// Input
+{
+  "key": "database/production"
+}
+
+// Output
+{
+  "key": "database/production",
+  "fields": [
+    {
+      "name": "host",
+      "sensitive": false,
+      "hint": "Database hostname"
+    },
+    {
+      "name": "port",
+      "sensitive": false,
+      "hint": "Database port"
+    },
+    {
+      "name": "username",
+      "sensitive": false,
+      "hint": "Database username"
+    },
+    {
+      "name": "password",
+      "sensitive": true,
+      "hint": "Database password"
+    }
+  ]
+}
+```
+
+---
+
+## secret_get_field
+
+Get a specific field value from a multi-field secret. Only non-sensitive fields can be retrieved (Option D+ policy). Sensitive fields will be rejected.
+
+### Input Schema
+
+```json
+{
+  "key": "string",
+  "field": "string"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `key` | string | Yes | The secret key |
+| `field` | string | Yes | The field name to retrieve |
+
+### Output Schema
+
+```json
+{
+  "key": "string",
+  "field": "string",
+  "value": "string",
+  "sensitive": "boolean"
+}
+```
+
+### Examples
+
+**Get non-sensitive field:**
+
+```json
+// Input
+{
+  "key": "database/production",
+  "field": "host"
+}
+
+// Output
+{
+  "key": "database/production",
+  "field": "host",
+  "value": "db.example.com",
+  "sensitive": false
+}
+```
+
+**Attempt to get sensitive field (rejected):**
+
+```json
+// Input
+{
+  "key": "database/production",
+  "field": "password"
+}
+
+// Error Response
+{
+  "error": "field 'password' is marked as sensitive (Option D+ policy)"
+}
+```
+
+---
+
+## secret_run_with_bindings
+
+Execute a command with environment variables injected based on the secret's predefined bindings. Each binding maps an environment variable name to a field. Requires policy approval.
+
+### Input Schema
+
+```json
+{
+  "key": "string",
+  "command": "string",
+  "args": ["string"],
+  "timeout": "string (optional)"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `key` | string | Yes | Secret key with bindings defined |
+| `command` | string | Yes | Command to execute |
+| `args` | string[] | No | Command arguments |
+| `timeout` | string | No | Execution timeout (e.g., `30s`, `5m`). Default: `5m` |
+
+### Output Schema
+
+```json
+{
+  "exit_code": "integer",
+  "stdout": "string",
+  "stderr": "string",
+  "sanitized": "boolean"
+}
+```
+
+### How Bindings Work
+
+When a secret is created with bindings, each binding maps an environment variable name to a field:
+
+```bash
+secretctl set database/production \
+  --field host=db.example.com \
+  --field port=5432 \
+  --field password \
+  --binding PGHOST=host \
+  --binding PGPORT=port \
+  --binding PGPASSWORD=password
+```
+
+When `secret_run_with_bindings` is called with this secret, the following environment variables are set:
+- `PGHOST=db.example.com`
+- `PGPORT=5432`
+- `PGPASSWORD=<password value>`
+
+### Examples
+
+**Run PostgreSQL command:**
+
+```json
+// Input
+{
+  "key": "database/production",
+  "command": "psql",
+  "args": ["-c", "SELECT 1"]
+}
+
+// Output
+{
+  "exit_code": 0,
+  "stdout": " ?column? \n----------\n        1\n(1 row)\n",
+  "stderr": "",
+  "sanitized": true
+}
+```
+
+---
+
 ## Policy Configuration
 
-The `secret_run` tool requires policy approval. Create `~/.secretctl/mcp-policy.yaml`:
+The `secret_run` and `secret_run_with_bindings` tools require policy approval. Create `~/.secretctl/mcp-policy.yaml`:
 
 ```yaml
 version: 1
@@ -494,8 +711,13 @@ The secretctl MCP server follows the "Option D+" security model:
 | `secret_exists` | No | Check existence and metadata |
 | `secret_get_masked` | No | Verify format without exposure |
 | `secret_run` | No* | Inject via environment variables |
+| `secret_list_fields` | No | List field names and metadata only |
+| `secret_get_field` | No** | Non-sensitive fields only |
+| `secret_run_with_bindings` | No* | Inject via predefined bindings |
 
 \* Secrets are injected as environment variables into the child process. The AI agent never sees the plaintext values.
+
+\** Only fields marked as `sensitive: false` can be retrieved. Sensitive fields are rejected with an error.
 
 ### Why No `secret_get`?
 
