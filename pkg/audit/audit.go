@@ -71,6 +71,12 @@ const (
 	OpSecretRunDenied = "secret.run_denied"
 	OpSecretExport    = "secret.export"
 
+	// MCP multi-field operations (Phase 2.5)
+	OpSecretListFields      = "secret.list_fields"
+	OpSecretGetField        = "secret.get_field"
+	OpSecretGetFieldDenied  = "secret.get_field_denied"
+	OpSecretRunWithBindings = "secret.run_with_bindings"
+
 	// Session operations (Phase 3+)
 	OpSessionStart = "session.start"
 	OpSessionEnd   = "session.end"

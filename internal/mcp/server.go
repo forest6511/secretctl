@@ -129,6 +129,24 @@ func (s *Server) registerTools() {
 		Name:        "secret_run",
 		Description: "Execute a command with specified secrets injected as environment variables. Output is automatically sanitized to prevent secret leakage. Requires policy approval.",
 	}, s.handleSecretRun)
+
+	// secret_list_fields - List field names for a multi-field secret
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "secret_list_fields",
+		Description: "List all field names and metadata for a multi-field secret. Returns field names, sensitivity flags, hints, and aliases. Does NOT return field values.",
+	}, s.handleSecretListFields)
+
+	// secret_get_field - Get a non-sensitive field value
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "secret_get_field",
+		Description: "Get a specific field value from a multi-field secret. Only non-sensitive fields can be retrieved (Option D+ policy). Sensitive fields will be rejected.",
+	}, s.handleSecretGetField)
+
+	// secret_run_with_bindings - Execute command with binding-based environment variables
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "secret_run_with_bindings",
+		Description: "Execute a command with environment variables injected based on the secret's predefined bindings. Each binding maps an environment variable name to a field. Requires policy approval.",
+	}, s.handleSecretRunWithBindings)
 }
 
 // Run starts the MCP server using stdio transport.
