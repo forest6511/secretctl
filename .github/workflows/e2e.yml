@@ -89,8 +89,9 @@ jobs:
           pkill -9 -f "vite" 2>/dev/null || true
           # Handle timeout: check if all tests passed based on output
           if [ $test_exit_code -eq 124 ]; then
-            # Check if we see test 23 (the last test) passing
-            if grep -q "✓.*23.*CORE-006" /tmp/e2e-output.log; then
+            # Check if we see the secrets list test passing (indicates all tests ran)
+            # Also check that there are no failures (✘)
+            if grep -q "✓.*secrets.spec.ts.*should display secrets list" /tmp/e2e-output.log && ! grep -q "✘" /tmp/e2e-output.log; then
               echo "All tests passed but process hung during cleanup. Considering success."
               exit 0
             else
