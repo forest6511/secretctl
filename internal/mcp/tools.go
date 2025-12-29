@@ -623,21 +623,28 @@ func wipeBindingSecrets(secrets []bindingSecretData) {
 	}
 }
 
-// wipeEnvSlice zeroes out environment variable strings that may contain secrets.
-// This prevents secrets from lingering in memory after command execution.
+// wipeEnvSlice clears environment variable string references.
+// NOTE: Due to Go's immutable strings, this cannot truly wipe the underlying
+// memory - it only clears references to allow GC collection. For defense-in-depth,
+// we also use bindingSecretData with []byte for the actual secret values which
+// ARE properly wiped in wipeBindingSecrets. The env slice is cleared as a
+// best-effort secondary measure.
 func wipeEnvSlice(env []string) {
 	for i := range env {
-		// Convert string to byte slice for wiping
-		// Note: This creates a copy, but we wipe both the slice and mark the original
-		b := []byte(env[i])
-		for j := range b {
-			b[j] = 0
-		}
-		runtime.KeepAlive(b)
-		// Clear the string reference
 		env[i] = ""
 	}
 	runtime.KeepAlive(env)
+}
+
+// wipeBuffer zeroes out the contents of a bytes.Buffer.
+// This is used to clear buffers that may contain sensitive data from command output.
+func wipeBuffer(buf *bytes.Buffer) {
+	b := buf.Bytes()
+	for i := range b {
+		b[i] = 0
+	}
+	runtime.KeepAlive(b)
+	buf.Reset()
 }
 
 // buildEnvironmentFromBindings creates environment variables from secret bindings.
@@ -732,6 +739,10 @@ func (s *Server) executeCommandWithBindings(ctx context.Context, command string,
 	sanitizer := newOutputSanitizer(secretDataList)
 	sanitizedStdout := sanitizer.sanitize(stdout.Bytes())
 	sanitizedStderr := sanitizer.sanitize(stderr.Bytes())
+
+	// Wipe original buffers that may contain secrets in raw output
+	wipeBuffer(&stdout)
+	wipeBuffer(&stderr)
 
 	// Limit output size
 	const maxOutputSize = 10 * 1024 * 1024
