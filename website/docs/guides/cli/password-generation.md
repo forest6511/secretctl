@@ -35,7 +35,7 @@ The default password includes:
 - Lowercase letters (a-z)
 - Uppercase letters (A-Z)
 - Numbers (0-9)
-- Symbols (!@#$%^&*()_+-=[]{}|;:,.<>?)
+- Symbols (`!@#$%^&*()_+-=[]{}|;:,.<>?`)
 
 ## Command Options
 
