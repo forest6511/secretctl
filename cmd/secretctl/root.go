@@ -101,6 +101,7 @@ func init() {
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(deleteCmd)
 	rootCmd.AddCommand(auditCmd)
+	rootCmd.AddCommand(passwordCmd)
 
 	// Add metadata flags to set command
 	setCmd.Flags().StringVar(&setNotes, "notes", "", "Add notes to the secret")
@@ -127,6 +128,9 @@ func init() {
 	auditCmd.AddCommand(auditVerifyCmd)
 	auditCmd.AddCommand(auditExportCmd)
 	auditCmd.AddCommand(auditPruneCmd)
+
+	// Add password subcommands
+	passwordCmd.AddCommand(passwordChangeCmd)
 
 	// Add flags to audit list
 	auditListCmd.Flags().IntVar(&auditLimit, "limit", 100, "Maximum number of events to show")

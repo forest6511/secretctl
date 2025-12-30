@@ -110,6 +110,24 @@ export namespace main {
 	        this.hint = source["hint"];
 	    }
 	}
+	export class PasswordChangeResult {
+	    success: boolean;
+	    message: string;
+	    strength: string;
+	    warnings?: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new PasswordChangeResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.success = source["success"];
+	        this.message = source["message"];
+	        this.strength = source["strength"];
+	        this.warnings = source["warnings"];
+	    }
+	}
 	export class Secret {
 	    key: string;
 	    value?: string;

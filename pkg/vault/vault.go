@@ -119,6 +119,7 @@ var (
 	ErrExpiresInPast        = errors.New("vault: expires_at must be in the future")
 	ErrPasswordTooShort     = errors.New("vault: password must be at least 8 characters")
 	ErrPasswordTooLong      = errors.New("vault: password must be at most 128 characters")
+	ErrSamePassword         = errors.New("vault: new password must be different from current password")
 )
 
 // Password validation constants per requirements-ja.md §2.3
@@ -383,20 +384,20 @@ func (v *Vault) Init(masterPassword string) error {
 		return fmt.Errorf("vault: failed to create tables: %w", err)
 	}
 
-	// 6. Save encrypted DEK and nonce to database
+	// 6. Save salt, encrypted DEK and nonce to database (ADR-003: salt in DB for atomic password change)
 	tx, err := db.Begin()
 	if err != nil {
 		return fmt.Errorf("vault: failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
 
-	stmt, err := tx.Prepare("INSERT INTO vault_keys(encrypted_dek, dek_nonce) VALUES(?, ?)")
+	stmt, err := tx.Prepare("INSERT INTO vault_keys(salt, encrypted_dek, dek_nonce) VALUES(?, ?, ?)")
 	if err != nil {
 		return fmt.Errorf("vault: failed to prepare statement: %w", err)
 	}
 	defer stmt.Close()
 
-	if _, err := stmt.Exec(encryptedDEK, nonce); err != nil {
+	if _, err := stmt.Exec(salt, encryptedDEK, nonce); err != nil {
 		return fmt.Errorf("vault: failed to save encrypted DEK: %w", err)
 	}
 
@@ -458,18 +459,43 @@ func (v *Vault) Unlock(masterPassword string) error {
 		return err
 	}
 
-	// 1. Read salt and validate length
-	saltPath := filepath.Join(v.path, SaltFileName)
-	salt, err := os.ReadFile(saltPath)
+	// 1. Open database to read salt (ADR-003: salt stored in DB for atomic password change)
+	dbPath := filepath.Join(v.path, DBFileName)
+	db, err := sql.Open("sqlite3", dbPath+"?_busy_timeout=5000")
 	if err != nil {
-		if os.IsNotExist(err) {
-			return ErrSaltNotFound
+		return fmt.Errorf("vault: failed to open database: %w", err)
+	}
+
+	// Configure SQLite for single-connection mode
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+
+	// Try to read salt from database first (v4+ schema)
+	var salt []byte
+	err = db.QueryRow("SELECT salt FROM vault_keys WHERE id = 1").Scan(&salt)
+	if err != nil || len(salt) == 0 {
+		// Fallback to file for pre-v4 vaults (migration will happen after unlock)
+		db.Close()
+		saltPath := filepath.Join(v.path, SaltFileName)
+		salt, err = os.ReadFile(saltPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return ErrSaltNotFound
+			}
+			return fmt.Errorf("vault: failed to read salt file: %w", err)
 		}
-		return fmt.Errorf("vault: failed to read salt file: %w", err)
+		// Reopen database for subsequent operations
+		db, err = sql.Open("sqlite3", dbPath+"?_busy_timeout=5000")
+		if err != nil {
+			return fmt.Errorf("vault: failed to reopen database: %w", err)
+		}
+		db.SetMaxOpenConns(1)
+		db.SetMaxIdleConns(1)
 	}
 
 	// Validate salt length to detect corruption/tampering
 	if len(salt) != SaltLength {
+		db.Close()
 		return ErrVaultCorrupted
 	}
 
@@ -480,18 +506,7 @@ func (v *Vault) Unlock(masterPassword string) error {
 	kek := crypto.DeriveKey(passwordBytes, salt)
 	defer crypto.SecureWipe(kek) // Wipe KEK after decrypting DEK
 
-	// 3. Read encrypted DEK and nonce from database
-	dbPath := filepath.Join(v.path, DBFileName)
-	db, err := sql.Open("sqlite3", dbPath+"?_busy_timeout=5000")
-	if err != nil {
-		return fmt.Errorf("vault: failed to open database: %w", err)
-	}
-
-	// Configure SQLite for single-connection mode to avoid "database is locked" errors
-	// This is appropriate for CLI usage where concurrent access is limited
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
-
+	// 3. Read encrypted DEK and nonce from database (db already opened in step 1)
 	var encryptedDEK, nonce []byte
 	err = db.QueryRow("SELECT encrypted_dek, dek_nonce FROM vault_keys WHERE id = 1").
 		Scan(&encryptedDEK, &nonce)
@@ -529,7 +544,7 @@ func (v *Vault) Unlock(masterPassword string) error {
 	v.db = db
 
 	// 6. Run schema migrations if needed
-	if err := migrateSchema(db); err != nil {
+	if err := migrateSchema(db, v.path); err != nil {
 		v.dek = nil
 		v.db = nil
 		db.Close()
@@ -582,6 +597,147 @@ func (v *Vault) Lock() {
 	}
 }
 
+// ChangePassword changes the master password by re-wrapping the DEK.
+// The DEK itself remains unchanged, so all secrets remain accessible.
+//
+// Process (ADR-003):
+//  1. Validate inputs, reject same password
+//  2. Create backup (VACUUM INTO, 0600)
+//  3. Begin transaction (mutex protects in-process, SQLite file-lock for cross-process)
+//  4. Verify current password, unwrap DEK
+//  5. Generate new salt/nonce, derive new KEK
+//  6. Re-wrap DEK with new KEK
+//  7. Verify in-memory before commit
+//  8. UPDATE vault_keys, COMMIT
+//  9. Record audit log, SecureWipe key material
+//
+// Concurrency: v.mu.Lock() serializes in-process calls; SQLite's file locking
+// prevents concurrent writes from multiple processes.
+//
+// Crash safety: SQLite atomic commit ensures all-or-nothing.
+// Before COMMIT → auto-rollback → old password works.
+// After COMMIT → change complete → new password works.
+func (v *Vault) ChangePassword(currentPassword, newPassword string) error {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	// Step 1: Validate inputs
+	// Check vault is unlocked
+	if v.dek == nil {
+		return ErrVaultLocked
+	}
+
+	// Convert passwords to []byte early (avoid string copies)
+	currentPasswordBytes := []byte(currentPassword)
+	defer crypto.SecureWipe(currentPasswordBytes)
+	newPasswordBytes := []byte(newPassword)
+	defer crypto.SecureWipe(newPasswordBytes)
+
+	// Reject if same password
+	if currentPassword == newPassword {
+		return ErrSamePassword
+	}
+
+	// Validate new password strength
+	validation := ValidateMasterPassword(newPassword)
+	if !validation.Valid {
+		// Password too short or too long
+		if len(newPassword) < MinPasswordLength {
+			return ErrPasswordTooShort
+		}
+		if len(newPassword) > MaxPasswordLength {
+			return ErrPasswordTooLong
+		}
+	}
+
+	// Step 2: Create backup (optional, for user safety)
+	backupPath := filepath.Join(v.path, fmt.Sprintf("%s.backup-%d", DBFileName, time.Now().Unix()))
+	// Escape single quotes in path for SQL safety
+	escapedPath := strings.ReplaceAll(backupPath, "'", "''")
+	_, err := v.db.Exec(fmt.Sprintf("VACUUM INTO '%s'", escapedPath))
+	if err != nil {
+		return fmt.Errorf("vault: failed to create backup: %w", err)
+	}
+	// Set secure permissions on backup
+	if err := os.Chmod(backupPath, FileMode); err != nil {
+		// Non-fatal, but warn
+		fmt.Fprintf(os.Stderr, "warning: failed to set backup permissions: %v\n", err)
+	}
+
+	// Step 3: Begin transaction
+	// SQLite's default transaction with deferred locking is sufficient.
+	// The first write operation (UPDATE vault_keys) acquires a write lock,
+	// and COMMIT is atomic. If crash occurs before COMMIT, changes are rolled back.
+	tx, err := v.db.Begin()
+	if err != nil {
+		return fmt.Errorf("vault: failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Step 4: Verify current password
+	// Read current salt and encrypted DEK from database
+	var currentSalt, encryptedDEK, dekNonce []byte
+	err = tx.QueryRow("SELECT salt, encrypted_dek, dek_nonce FROM vault_keys WHERE id = 1").
+		Scan(&currentSalt, &encryptedDEK, &dekNonce)
+	if err != nil {
+		return fmt.Errorf("vault: failed to read vault keys: %w", err)
+	}
+
+	// Derive old KEK and verify by unwrapping DEK
+	kekOld := crypto.DeriveKey(currentPasswordBytes, currentSalt)
+	defer crypto.SecureWipe(kekOld)
+
+	dekCopy, err := crypto.Decrypt(kekOld, encryptedDEK, dekNonce)
+	if err != nil {
+		return ErrInvalidPassword
+	}
+	defer crypto.SecureWipe(dekCopy)
+
+	// Step 5: Generate new cryptographic material
+	newSalt := make([]byte, SaltLength)
+	if _, err := rand.Read(newSalt); err != nil {
+		return fmt.Errorf("vault: failed to generate new salt: %w", err)
+	}
+
+	// Derive new KEK
+	kekNew := crypto.DeriveKey(newPasswordBytes, newSalt)
+	defer crypto.SecureWipe(kekNew)
+
+	// Step 6: Re-wrap DEK with new KEK
+	encryptedDEKNew, newNonce, err := crypto.Encrypt(kekNew, dekCopy)
+	if err != nil {
+		return fmt.Errorf("vault: failed to re-wrap DEK: %w", err)
+	}
+
+	// Step 7: Verify before commit (in-memory)
+	testDEK, err := crypto.Decrypt(kekNew, encryptedDEKNew, newNonce)
+	if err != nil {
+		return fmt.Errorf("vault: verification failed, DEK re-wrap corrupted: %w", err)
+	}
+	crypto.SecureWipe(testDEK)
+
+	// Step 8: Atomic update + Commit
+	_, err = tx.Exec("UPDATE vault_keys SET salt = ?, encrypted_dek = ?, dek_nonce = ? WHERE id = 1",
+		newSalt, encryptedDEKNew, newNonce)
+	if err != nil {
+		return fmt.Errorf("vault: failed to update vault keys: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("vault: failed to commit password change: %w", err)
+	}
+
+	// Step 9: Post-commit actions
+	// Record audit log (file-based, best-effort)
+	_ = v.audit.LogSuccess(audit.OpPasswordChanged, audit.SourceCLI, "")
+
+	// Delete backup file (optional - keep for safety during initial rollout)
+	// TODO: Consider making this configurable in future versions
+	// os.Remove(backupPath)
+
+	return nil
+}
+
 // Audit returns the vault's audit logger for MCP and other external use.
 func (v *Vault) Audit() *audit.Logger {
 	return v.audit
@@ -631,10 +787,11 @@ func (v *Vault) checkAndWarnPermissions() {
 
 // createTables creates the required SQLite tables
 func (v *Vault) createTables(db *sql.DB) error {
-	// vault_keys table (encrypted DEK)
+	// vault_keys table (encrypted DEK + salt per ADR-003)
 	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS vault_keys (
 			id INTEGER PRIMARY KEY,
+			salt BLOB NOT NULL,
 			encrypted_dek BLOB NOT NULL,
 			dek_nonce BLOB NOT NULL,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

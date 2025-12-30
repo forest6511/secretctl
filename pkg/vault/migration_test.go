@@ -165,8 +165,38 @@ func TestMigrateSchema(t *testing.T) {
 		t.Fatalf("failed to create v1 schema: %v", err)
 	}
 
+	// Create vault_keys table (needed for v4 migration)
+	_, err = db.Exec(`
+		CREATE TABLE vault_keys (
+			id INTEGER PRIMARY KEY,
+			encrypted_dek BLOB NOT NULL,
+			dek_nonce BLOB NOT NULL,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		t.Fatalf("failed to create vault_keys table: %v", err)
+	}
+
+	// Insert dummy vault_keys row
+	_, err = db.Exec("INSERT INTO vault_keys (encrypted_dek, dek_nonce) VALUES (?, ?)",
+		[]byte("dummy_dek"), []byte("dummy_nonce"))
+	if err != nil {
+		t.Fatalf("failed to insert vault_keys: %v", err)
+	}
+
+	// Create salt file (needed for v4 migration)
+	salt := make([]byte, SaltLength)
+	for i := range salt {
+		salt[i] = byte(i)
+	}
+	saltPath := filepath.Join(tmpDir, SaltFileName)
+	if err := os.WriteFile(saltPath, salt, 0600); err != nil {
+		t.Fatalf("failed to create salt file: %v", err)
+	}
+
 	// Run full migration
-	if err := migrateSchema(db); err != nil {
+	if err := migrateSchema(db, tmpDir); err != nil {
 		t.Fatalf("migrateSchema failed: %v", err)
 	}
 
@@ -223,16 +253,6 @@ func TestGetTableColumns(t *testing.T) {
 	if len(columns) != len(expected) {
 		t.Errorf("expected %d columns, got %d", len(expected), len(columns))
 	}
-}
-
-// Helper function for testing - uses db.Query directly instead of transaction
-func getTableColumnsFromDB(db *sql.DB, tableName string) (map[string]bool, error) {
-	tx, err := db.Begin()
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
-	return getTableColumns(tx, tableName)
 }
 
 func TestMigrateToV3(t *testing.T) {

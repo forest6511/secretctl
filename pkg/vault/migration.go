@@ -4,6 +4,8 @@ package vault
 import (
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 )
 
 // Schema version constants
@@ -14,8 +16,10 @@ const (
 	SchemaVersion2 = 2
 	// SchemaVersion3 adds field_count column for MCP secret_list
 	SchemaVersion3 = 3
+	// SchemaVersion4 adds salt column to vault_keys (Phase 2c-P: Password Change)
+	SchemaVersion4 = 4
 	// CurrentSchemaVersion is the current schema version
-	CurrentSchemaVersion = SchemaVersion3
+	CurrentSchemaVersion = SchemaVersion4
 )
 
 // getSchemaVersion returns the current schema version from the database.
@@ -72,7 +76,8 @@ func setSchemaVersion(db *sql.DB, version int) error {
 }
 
 // migrateSchema migrates the database schema to the current version.
-func migrateSchema(db *sql.DB) error {
+// vaultPath is needed for v4 migration to read salt file.
+func migrateSchema(db *sql.DB, vaultPath string) error {
 	version, err := getSchemaVersion(db)
 	if err != nil {
 		return err
@@ -88,6 +93,12 @@ func migrateSchema(db *sql.DB) error {
 	if version < SchemaVersion3 {
 		if err := migrateToV3(db); err != nil {
 			return fmt.Errorf("vault: migration to v3 failed: %w", err)
+		}
+	}
+
+	if version < SchemaVersion4 {
+		if err := migrateToV4(db, vaultPath); err != nil {
+			return fmt.Errorf("vault: migration to v4 failed: %w", err)
 		}
 	}
 
@@ -234,4 +245,91 @@ func migrateToV3(db *sql.DB) error {
 	}
 
 	return nil
+}
+
+// migrateToV4 adds salt column to vault_keys for atomic password change.
+// This migration (ADR-003):
+// 1. Adds salt column to vault_keys table (BLOB, NOT NULL with default empty for migration)
+// 2. Reads salt from vault.salt file
+// 3. Stores salt in vault_keys table
+// 4. Updates schema version
+//
+// The salt is moved from file to database to enable atomic password change.
+// Old vault.salt file is NOT deleted for backward compatibility during transition.
+// Future versions may remove the file after successful migration verification.
+func migrateToV4(db *sql.DB, vaultPath string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Check if salt column already exists (idempotent migration)
+	columns, err := getTableColumnsFromDB(db, "vault_keys")
+	if err != nil {
+		return fmt.Errorf("failed to get vault_keys columns: %w", err)
+	}
+
+	// Add salt column if it doesn't exist
+	if !columns["salt"] {
+		// Add column with empty default first (SQLite requires default for NOT NULL on existing rows)
+		_, err = tx.Exec("ALTER TABLE vault_keys ADD COLUMN salt BLOB NOT NULL DEFAULT ''")
+		if err != nil {
+			return fmt.Errorf("failed to add salt column: %w", err)
+		}
+
+		// Read salt from file
+		saltPath := filepath.Join(vaultPath, SaltFileName)
+		salt, err := os.ReadFile(saltPath)
+		if err != nil {
+			return fmt.Errorf("failed to read salt file: %w", err)
+		}
+
+		// Validate salt length
+		if len(salt) != SaltLength {
+			return fmt.Errorf("invalid salt length: expected %d, got %d", SaltLength, len(salt))
+		}
+
+		// Update vault_keys with the salt
+		_, err = tx.Exec("UPDATE vault_keys SET salt = ? WHERE id = 1", salt)
+		if err != nil {
+			return fmt.Errorf("failed to store salt in database: %w", err)
+		}
+	}
+
+	// Update schema version
+	_, err = tx.Exec("INSERT OR REPLACE INTO schema_version (version) VALUES (?)", SchemaVersion4)
+	if err != nil {
+		return fmt.Errorf("failed to set schema version: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit migration: %w", err)
+	}
+
+	return nil
+}
+
+// getTableColumnsFromDB returns a map of column names for a table using db connection.
+// Unlike getTableColumns, this uses *sql.DB instead of *sql.Tx.
+func getTableColumnsFromDB(db *sql.DB, tableName string) (map[string]bool, error) {
+	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", tableName))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	columns := make(map[string]bool)
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dfltValue sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+			return nil, err
+		}
+		columns[name] = true
+	}
+
+	return columns, rows.Err()
 }

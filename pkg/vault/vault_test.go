@@ -4,6 +4,7 @@ package vault
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -2163,5 +2164,344 @@ func TestFieldCountInListSecretsWithMetadata(t *testing.T) {
 		if got != want {
 			t.Errorf("key %q: field_count = %d, want %d", key, got, want)
 		}
+	}
+}
+
+// ============================================================================
+// Password Change Tests (ADR-003)
+// ============================================================================
+
+// TestChangePassword_Success tests successful password change.
+func TestChangePassword_Success(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Set secure permissions for the vault directory
+	if err := os.Chmod(tmpDir, 0700); err != nil {
+		t.Fatalf("failed to set directory permissions: %v", err)
+	}
+
+	v := New(tmpDir)
+	oldPassword := "testpassword123"
+	newPassword := "newpassword456"
+
+	// Initialize and unlock
+	if err := v.Init(oldPassword); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := v.Unlock(oldPassword); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+
+	// Store a secret before password change
+	entry := &SecretEntry{
+		Fields: map[string]Field{
+			"username": {Value: "testuser", Sensitive: false},
+			"password": {Value: "secretpass", Sensitive: true},
+		},
+	}
+	if err := v.SetSecret("test/key", entry); err != nil {
+		t.Fatalf("SetSecret failed: %v", err)
+	}
+
+	// Change password
+	if err := v.ChangePassword(oldPassword, newPassword); err != nil {
+		t.Fatalf("ChangePassword failed: %v", err)
+	}
+
+	// Lock the vault
+	v.Lock()
+
+	// Unlock with new password should work
+	if err := v.Unlock(newPassword); err != nil {
+		t.Fatalf("Unlock with new password failed: %v", err)
+	}
+
+	// Verify secret is still accessible
+	retrieved, err := v.GetSecret("test/key")
+	if err != nil {
+		t.Fatalf("GetSecret after password change failed: %v", err)
+	}
+	if retrieved.Fields["username"].Value != "testuser" {
+		t.Errorf("username mismatch after password change")
+	}
+	if retrieved.Fields["password"].Value != "secretpass" {
+		t.Errorf("password mismatch after password change")
+	}
+
+	v.Lock()
+
+	// Unlock with old password should fail
+	if err := v.Unlock(oldPassword); err == nil {
+		t.Error("Unlock with old password should have failed")
+	}
+}
+
+// TestChangePassword_SamePassword tests that same password is rejected.
+func TestChangePassword_SamePassword(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.Chmod(tmpDir, 0700); err != nil {
+		t.Fatalf("failed to set directory permissions: %v", err)
+	}
+
+	v := New(tmpDir)
+	password := "testpassword123"
+
+	if err := v.Init(password); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := v.Unlock(password); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+	defer v.Lock()
+
+	// Try to change to same password
+	err := v.ChangePassword(password, password)
+	if err == nil {
+		t.Error("ChangePassword with same password should fail")
+	}
+	if err != ErrSamePassword {
+		t.Errorf("expected ErrSamePassword, got: %v", err)
+	}
+}
+
+// TestChangePassword_InvalidCurrentPassword tests that wrong current password is rejected.
+func TestChangePassword_InvalidCurrentPassword(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.Chmod(tmpDir, 0700); err != nil {
+		t.Fatalf("failed to set directory permissions: %v", err)
+	}
+
+	v := New(tmpDir)
+	password := "testpassword123"
+
+	if err := v.Init(password); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := v.Unlock(password); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+	defer v.Lock()
+
+	// Try to change with wrong current password
+	err := v.ChangePassword("wrongpassword", "newpassword456")
+	if err == nil {
+		t.Error("ChangePassword with wrong current password should fail")
+	}
+	if err != ErrInvalidPassword {
+		t.Errorf("expected ErrInvalidPassword, got: %v", err)
+	}
+}
+
+// TestChangePassword_VaultLocked tests that password change fails when vault is locked.
+func TestChangePassword_VaultLocked(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.Chmod(tmpDir, 0700); err != nil {
+		t.Fatalf("failed to set directory permissions: %v", err)
+	}
+
+	v := New(tmpDir)
+	password := "testpassword123"
+
+	if err := v.Init(password); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	// Don't unlock - vault is locked
+
+	// Try to change password
+	err := v.ChangePassword(password, "newpassword456")
+	if err == nil {
+		t.Error("ChangePassword on locked vault should fail")
+	}
+	if err != ErrVaultLocked {
+		t.Errorf("expected ErrVaultLocked, got: %v", err)
+	}
+}
+
+// TestChangePassword_WeakNewPassword tests that weak new password is rejected.
+func TestChangePassword_WeakNewPassword(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.Chmod(tmpDir, 0700); err != nil {
+		t.Fatalf("failed to set directory permissions: %v", err)
+	}
+
+	v := New(tmpDir)
+	password := "testpassword123"
+
+	if err := v.Init(password); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := v.Unlock(password); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+	defer v.Lock()
+
+	// Try to change to weak password
+	err := v.ChangePassword(password, "short")
+	if err == nil {
+		t.Error("ChangePassword with weak password should fail")
+	}
+	if err != ErrPasswordTooShort {
+		t.Errorf("expected ErrPasswordTooShort, got: %v", err)
+	}
+}
+
+// TestChangePassword_MultipleSecrets tests that all secrets remain accessible after password change.
+func TestChangePassword_MultipleSecrets(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.Chmod(tmpDir, 0700); err != nil {
+		t.Fatalf("failed to set directory permissions: %v", err)
+	}
+
+	v := New(tmpDir)
+	oldPassword := "testpassword123"
+	newPassword := "newpassword456"
+
+	if err := v.Init(oldPassword); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := v.Unlock(oldPassword); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+
+	// Store multiple secrets
+	secrets := map[string]*SecretEntry{
+		"db/prod": {
+			Fields: map[string]Field{
+				"host":     {Value: "prod.db.example.com", Sensitive: false},
+				"password": {Value: "prodpass123", Sensitive: true},
+			},
+		},
+		"api/key": {
+			Fields: map[string]Field{
+				"api_key": {Value: "ak_live_xxxxx", Sensitive: true},
+			},
+		},
+		"aws/creds": {
+			Fields: map[string]Field{
+				"access_key": {Value: "AKIAIOSFODNN7EXAMPLE", Sensitive: true},
+				"secret_key": {Value: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", Sensitive: true},
+			},
+		},
+	}
+
+	for key, entry := range secrets {
+		if err := v.SetSecret(key, entry); err != nil {
+			t.Fatalf("SetSecret %q failed: %v", key, err)
+		}
+	}
+
+	// Change password
+	if err := v.ChangePassword(oldPassword, newPassword); err != nil {
+		t.Fatalf("ChangePassword failed: %v", err)
+	}
+
+	v.Lock()
+
+	// Unlock with new password
+	if err := v.Unlock(newPassword); err != nil {
+		t.Fatalf("Unlock with new password failed: %v", err)
+	}
+	defer v.Lock()
+
+	// Verify all secrets are accessible
+	for key, original := range secrets {
+		retrieved, err := v.GetSecret(key)
+		if err != nil {
+			t.Errorf("GetSecret %q failed: %v", key, err)
+			continue
+		}
+		for fieldName, field := range original.Fields {
+			if retrieved.Fields[fieldName].Value != field.Value {
+				t.Errorf("%s.%s: expected %q, got %q", key, fieldName, field.Value, retrieved.Fields[fieldName].Value)
+			}
+		}
+	}
+}
+
+// TestChangePassword_BackupCreated tests that a backup is created during password change.
+func TestChangePassword_BackupCreated(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.Chmod(tmpDir, 0700); err != nil {
+		t.Fatalf("failed to set directory permissions: %v", err)
+	}
+
+	v := New(tmpDir)
+	password := "testpassword123"
+
+	if err := v.Init(password); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := v.Unlock(password); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+	defer v.Lock()
+
+	// Change password
+	if err := v.ChangePassword(password, "newpassword456"); err != nil {
+		t.Fatalf("ChangePassword failed: %v", err)
+	}
+
+	// Check that backup file was created
+	files, err := os.ReadDir(tmpDir)
+	if err != nil {
+		t.Fatalf("ReadDir failed: %v", err)
+	}
+
+	hasBackup := false
+	for _, f := range files {
+		// Backup file format: vault.db.backup-<timestamp>
+		if strings.HasPrefix(f.Name(), "vault.db.backup-") {
+			hasBackup = true
+			break
+		}
+	}
+	if !hasBackup {
+		t.Error("backup file was not created")
+	}
+}
+
+// TestChangePassword_AuditLog tests that password change is logged.
+func TestChangePassword_AuditLog(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.Chmod(tmpDir, 0700); err != nil {
+		t.Fatalf("failed to set directory permissions: %v", err)
+	}
+
+	v := New(tmpDir)
+	password := "testpassword123"
+
+	if err := v.Init(password); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := v.Unlock(password); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+	defer v.Lock()
+
+	// Change password
+	if err := v.ChangePassword(password, "newpassword456"); err != nil {
+		t.Fatalf("ChangePassword failed: %v", err)
+	}
+
+	// Check audit log
+	events, err := v.AuditLogger().ListEvents(10, time.Time{})
+	if err != nil {
+		t.Fatalf("ListEvents failed: %v", err)
+	}
+
+	// Find password.changed event
+	foundPasswordChanged := false
+	for _, event := range events {
+		if event.Operation == "password.changed" {
+			foundPasswordChanged = true
+			if event.Result != "success" {
+				t.Errorf("password.changed event should have success result, got %q", event.Result)
+			}
+			break
+		}
+	}
+	if !foundPasswordChanged {
+		t.Error("password.changed event not found in audit log")
 	}
 }

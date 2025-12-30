@@ -25,6 +25,7 @@ type App struct {
 	unlocked     bool
 	lastActivity time.Time
 	activityMu   sync.Mutex
+	stateMu      sync.Mutex // Protects vault and unlocked fields
 }
 
 // NewApp creates a new App application struct
@@ -65,7 +66,11 @@ func (a *App) watchIdleTimeout() {
 			idle := time.Since(a.lastActivity)
 			a.activityMu.Unlock()
 
-			if a.unlocked && idle > 15*time.Minute {
+			a.stateMu.Lock()
+			isUnlocked := a.unlocked
+			a.stateMu.Unlock()
+
+			if isUnlocked && idle > 15*time.Minute {
 				a.Lock()
 				runtime.EventsEmit(a.ctx, "vault:locked")
 			}
@@ -128,6 +133,9 @@ func (a *App) InitVault(password string) error {
 
 // Unlock unlocks the vault with master password
 func (a *App) Unlock(password string) error {
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+
 	if a.unlocked {
 		return errors.New("vault already unlocked")
 	}
@@ -146,6 +154,9 @@ func (a *App) Unlock(password string) error {
 
 // Lock locks the vault and clears clipboard
 func (a *App) Lock() error {
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+
 	if !a.unlocked {
 		return errors.New("vault not unlocked")
 	}
@@ -160,8 +171,92 @@ func (a *App) Lock() error {
 	return nil
 }
 
+// PasswordChangeResult represents the result of a password change operation.
+type PasswordChangeResult struct {
+	Success  bool     `json:"success"`
+	Message  string   `json:"message"`
+	Strength string   `json:"strength"`
+	Warnings []string `json:"warnings,omitempty"`
+}
+
+// ChangePassword changes the master password.
+// Returns a detailed result with validation info and any warnings.
+func (a *App) ChangePassword(currentPassword, newPassword, confirmPassword string) PasswordChangeResult {
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+
+	// Check vault is unlocked
+	if !a.unlocked || a.vault == nil {
+		return PasswordChangeResult{
+			Success: false,
+			Message: "Vault is not unlocked",
+		}
+	}
+
+	// Check new passwords match
+	if newPassword != confirmPassword {
+		return PasswordChangeResult{
+			Success: false,
+			Message: "New passwords do not match",
+		}
+	}
+
+	// Check new password is different from current
+	if currentPassword == newPassword {
+		return PasswordChangeResult{
+			Success: false,
+			Message: "New password must be different from current password",
+		}
+	}
+
+	// Validate new password strength
+	validation := vault.ValidateMasterPassword(newPassword)
+	if !validation.Valid {
+		return PasswordChangeResult{
+			Success:  false,
+			Message:  validation.Warnings[0],
+			Strength: string(validation.Strength),
+			Warnings: validation.Warnings,
+		}
+	}
+
+	// Perform the password change
+	if err := a.vault.ChangePassword(currentPassword, newPassword); err != nil {
+		// Map specific errors to user-friendly messages
+		if errors.Is(err, vault.ErrInvalidPassword) {
+			return PasswordChangeResult{
+				Success: false,
+				Message: "Current password is incorrect",
+			}
+		}
+		if errors.Is(err, vault.ErrSamePassword) {
+			return PasswordChangeResult{
+				Success: false,
+				Message: "New password must be different from current password",
+			}
+		}
+		return PasswordChangeResult{
+			Success: false,
+			Message: "Failed to change password: " + err.Error(),
+		}
+	}
+
+	// Update activity timestamp
+	a.lastActivity = time.Now()
+
+	return PasswordChangeResult{
+		Success:  true,
+		Message:  "Password changed successfully",
+		Strength: string(validation.Strength),
+		Warnings: validation.Warnings,
+	}
+}
+
 // GetAuthStatus returns current authentication status
 func (a *App) GetAuthStatus() AuthStatus {
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+
 	return AuthStatus{
 		Unlocked: a.unlocked,
 		VaultDir: a.vaultDir,
