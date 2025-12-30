@@ -1275,7 +1275,7 @@ func TestHandleSecretGetField_SensitiveRejected(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for sensitive field")
 	}
-	if err.Error() != "field 'password' is marked as sensitive and cannot be retrieved via MCP (Option D+ policy)" {
+	if err.Error() != "field 'password' is marked as sensitive and cannot be retrieved via MCP (AI-Safe Access policy)" {
 		t.Errorf("unexpected error: %v", err)
 	}
 }

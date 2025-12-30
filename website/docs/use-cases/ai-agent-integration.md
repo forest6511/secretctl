@@ -26,7 +26,7 @@ Exposing raw secrets to AI agents creates risks:
 - **Logging exposure** - Secrets may appear in conversation logs
 - **No revocation** - Hard to invalidate exposed credentials
 
-### secretctl's Solution: Option D+
+### secretctl's Solution: AI-Safe Access
 
 secretctl follows the "Access Without Exposure" principle:
 

@@ -120,7 +120,7 @@ Once configured, Claude Code can:
 - Modify or delete secrets
 - Export your vault
 
-This is the **Option D+** security model - AI agents can use your secrets without ever seeing them.
+This is the **AI-Safe Access** security model - AI agents can use your secrets without ever seeing them.
 
 ## Step 6: Run Commands with Secrets
 
@@ -172,7 +172,7 @@ secretctl restore ~/backup/secrets-20241224.enc --dry-run
 
 ## Next Steps
 
-- [MCP Security Model](/docs/guides/mcp/security-model) - Understand how Option D+ keeps your secrets safe
+- [MCP Security Model](/docs/guides/mcp/security-model) - Understand how AI-Safe Access keeps your secrets safe
 - [Available MCP Tools](/docs/guides/mcp/available-tools) - Complete MCP tool reference
 - [Environment Aliases](/docs/guides/mcp/env-aliases) - Manage dev/staging/prod environments
 - [CLI Reference](/docs/reference/cli-commands) - Full CLI command documentation

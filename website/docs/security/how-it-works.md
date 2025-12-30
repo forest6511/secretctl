@@ -19,7 +19,7 @@ This guide explains the security architecture of secretctl, including how secret
 │   ═══════════════              ═════════                            │
 │   CLI / Desktop App            MCP Server                           │
 │        │                            │                               │
-│        │ Full Access                │ Restricted (Option D+)        │
+│        │ Full Access                │ Restricted (AI-Safe Access)   │
 │        │                            │                               │
 │        └──────────┬────────────────┘                               │
 │                   │                                                 │
@@ -151,20 +151,20 @@ secretctl restricts functionality based on access method:
 - AI agents are **proxies** that don't need to know the actual values
 - AI only needs the **result** of using secrets, not the secrets themselves
 
-## Option D+: Access Without Exposure
+## AI-Safe Access: Access Without Exposure
 
 The core security model for AI integration:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  Option D+: Access Without Exposure                                  │
+│  AI-Safe Access: Access Without Exposure                            │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
 │  ❌ Traditional MCP Implementation:                                  │
 │     AI → MCP Server → Plaintext Secret → AI → Use                   │
 │     Problem: AI "knows" the secret                                  │
 │                                                                     │
-│  ✅ secretctl Option D+:                                            │
+│  ✅ secretctl AI-Safe Access:                                       │
 │     AI → "Run this command with this secret"                        │
 │        → Secret injected directly (AI never sees it)                │
 │        → Only the result returns to AI                              │

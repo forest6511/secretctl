@@ -205,7 +205,7 @@ func getTableColumns(tx *sql.Tx, tableName string) (map[string]bool, error) {
 // 2. Updates schema version
 //
 // The field_count is stored in plaintext (not encrypted) as it's not sensitive
-// and allows efficient querying without decryption (Option D+ compliant).
+// and allows efficient querying without decryption (AI-Safe Access compliant).
 //
 // Note: Multi-field secrets created on v2 schema will have incorrect field_count=1
 // until re-saved. This is acceptable because:

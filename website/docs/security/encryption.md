@@ -333,7 +333,7 @@ type SecretMetadata struct {
 
 ### MCP Access Restrictions
 
-Option D+ extends to metadata:
+AI-Safe Access extends to metadata:
 
 | Data | MCP Access |
 |------|------------|

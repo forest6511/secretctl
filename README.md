@@ -259,6 +259,37 @@ secretctl audit export --format=csv -o audit.csv
 secretctl audit prune --older-than=12m --dry-run
 ```
 
+### AI-Safe Access
+
+secretctl implements **AI-Safe Access** — a security principle where AI agents never receive plaintext secrets.
+
+Unlike traditional secret managers that might expose credentials directly to AI, secretctl uses a fundamentally different approach:
+
+```mermaid
+flowchart LR
+    subgraph "Traditional Approach ❌"
+        AI1[AI Agent] -->|"get secret"| SM1[Secret Manager]
+        SM1 -->|"plaintext: sk-xxx..."| AI1
+    end
+
+    subgraph "AI-Safe Access ✅"
+        AI2[AI Agent] -->|"run command"| SM2[secretctl]
+        SM2 -->|"inject env vars"| CMD[Command]
+        CMD -->|"sanitized output"| SM2
+        SM2 -->|"[REDACTED]"| AI2
+    end
+```
+
+**How it works:**
+
+| Tool | What AI Sees | What Happens |
+|------|--------------|--------------|
+| `secret_list` | Key names, metadata | No values exposed |
+| `secret_get_masked` | `****WXYZ` | Last 4 chars only |
+| `secret_run` | `[REDACTED:KEY]` | Secrets injected as env vars, output sanitized |
+
+This follows the **"Access Without Exposure"** philosophy used by industry leaders like 1Password and HashiCorp Vault.
+
 ### AI Integration (MCP Server)
 
 secretctl includes an MCP server for secure integration with AI coding assistants like Claude Code:

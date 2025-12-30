@@ -1,10 +1,10 @@
 ---
 title: Security Model
-description: How Option D+ keeps secrets safe from AI agents.
+description: How AI-Safe Access keeps secrets safe from AI agents.
 sidebar_position: 2
 ---
 
-# Security Model (Option D+)
+# Security Model (AI-Safe Access)
 
 secretctl follows the "Access Without Exposure" principle, ensuring AI agents can use your secrets without ever seeing them.
 
@@ -112,7 +112,7 @@ Output sanitization uses exact string matching. It does **not** detect:
 
 ## Threat Categories
 
-secretctl's Option D+ design protects against these threat categories:
+secretctl's AI-Safe Access design protects against these threat categories:
 
 ### 1. Direct Secret Exposure
 

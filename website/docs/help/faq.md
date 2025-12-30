@@ -35,7 +35,7 @@ secretctl uses:
 
 ### Why can't I get plaintext secrets via MCP?
 
-This is intentional. The MCP server follows the "Option D+" security model where AI agents never receive plaintext secrets. Instead:
+This is intentional. The MCP server follows the "AI-Safe Access" security model where AI agents never receive plaintext secrets. Instead:
 - `secret_run` injects secrets as environment variables
 - `secret_get_masked` returns masked values (e.g., `****WXYZ`)
 - Output is sanitized to prevent accidental secret exposure

@@ -27,7 +27,7 @@ secretctl uses industry-standard encryption:
 - **AES-256-GCM** for encrypting secret values
 - **Argon2id** for deriving encryption keys from your master password
 
-## Option D+ (AI Security)
+## AI-Safe Access (AI Security)
 
 When using secretctl with AI agents (MCP), secrets are never exposed in plaintext:
 
@@ -35,4 +35,4 @@ When using secretctl with AI agents (MCP), secrets are never exposed in plaintex
 - `secret_get_masked`: Returns masked values like `****WXYZ`
 - No `secret_get` for plaintext via MCP
 
-[Learn more about Option D+ →](/docs/guides/mcp/security-model)
+[Learn more about AI-Safe Access →](/docs/guides/mcp/security-model)
