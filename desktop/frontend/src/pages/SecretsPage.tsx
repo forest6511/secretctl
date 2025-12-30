@@ -12,6 +12,7 @@ import { TemplateSelector } from '@/components/TemplateSelector'
 import { AddFieldDialog } from '@/components/AddFieldDialog'
 import { BindingsSection } from '@/components/BindingsSection'
 import { AddBindingDialog } from '@/components/AddBindingDialog'
+import { ChangePasswordDialog } from '@/components/ChangePasswordDialog'
 import { useToast } from '@/hooks/useToast'
 import {
   ListSecrets, GetSecret,
@@ -48,6 +49,7 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
   // Dialog states
   const [showAddFieldDialog, setShowAddFieldDialog] = useState(false)
   const [showAddBindingDialog, setShowAddBindingDialog] = useState(false)
+  const [showChangePasswordDialog, setShowChangePasswordDialog] = useState(false)
   // Template selection state
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null)
   const [templates, setTemplates] = useState<main.TemplateInfo[]>([])
@@ -414,6 +416,9 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
               <Button variant="ghost" size="icon" onClick={loadSecrets} title="Refresh">
                 <RefreshCw className="w-4 h-4" />
               </Button>
+              <Button variant="ghost" size="icon" onClick={() => setShowChangePasswordDialog(true)} title="Change Password" data-testid="change-password-button">
+                <Key className="w-4 h-4" />
+              </Button>
               <Button variant="ghost" size="icon" onClick={handleLock} title="Lock">
                 <Lock className="w-4 h-4" />
               </Button>
@@ -735,6 +740,12 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
         fieldNames={formFieldOrder}
         onAdd={handleAddBinding}
         onCancel={() => setShowAddBindingDialog(false)}
+      />
+
+      <ChangePasswordDialog
+        open={showChangePasswordDialog}
+        onClose={() => setShowChangePasswordDialog(false)}
+        onSuccess={() => setShowChangePasswordDialog(false)}
       />
 
       {/* Confirm Field Delete Dialog */}

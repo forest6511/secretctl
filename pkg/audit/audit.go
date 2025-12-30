@@ -80,6 +80,9 @@ const (
 	// Session operations (Phase 3+)
 	OpSessionStart = "session.start"
 	OpSessionEnd   = "session.end"
+
+	// Password management operations (Phase 2c-P)
+	OpPasswordChanged = "password.changed"
 )
 
 // Source identifies where the operation originated
