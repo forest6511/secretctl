@@ -607,7 +607,7 @@ func (v *Vault) exists() bool {
 }
 
 // checkAndWarnPermissions checks file permissions and prints warnings if insecure.
-// Per requirements-ja.md §4.1: "0600以外のパーミッションで警告表示"
+// Per requirements-ja.md §4.1: "Warn if permissions are not 0600"
 // This is advisory only and does not block operations.
 func (v *Vault) checkAndWarnPermissions() {
 	// Check vault directory (should be 0700)
@@ -645,7 +645,7 @@ func (v *Vault) createTables(db *sql.DB) error {
 	}
 
 	// secrets table (hybrid approach: encrypted metadata JSON + plaintext search fields)
-	// Per project-proposal-ja.md Phase 0: メタデータ対応 (notes/url/tags/expires_at)
+	// Per project-proposal-ja.md Phase 0: Metadata support (notes/url/tags/expires_at)
 	// Per ADR-002 Phase 2.5: Multi-field secrets support
 	// - encrypted_key: encrypted key name (nonce prepended)
 	// - encrypted_value: legacy single value (nonce prepended) - kept for backward compatibility
