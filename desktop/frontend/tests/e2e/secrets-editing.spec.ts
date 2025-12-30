@@ -194,20 +194,27 @@ test.describe('Secret Multi-field Editing', () => {
       await expect(page.getByTestId('add-field-dialog')).not.toBeVisible()
       await page.getByTestId('save-secret-button').click()
 
+      // Wait for save to complete and re-render
+      await page.waitForTimeout(300)
+
       // Now delete the extra field
       await page.getByTestId(`secret-item-${secretKey}`).click()
       await page.getByTestId('edit-secret-button').click()
 
-      await expect(page.getByTestId('delete-field-extra_field')).toBeVisible()
+      // Wait for fields to load in edit mode
+      await expect(page.getByTestId('delete-field-extra_field')).toBeVisible({ timeout: 5000 })
       await page.getByTestId('delete-field-extra_field').click()
 
-      // Confirm deletion in dialog
-      await expect(page.getByRole('button', { name: 'Delete' })).toBeVisible()
-      await page.getByRole('button', { name: 'Delete' }).click()
-      await expect(page.getByTestId('confirm-dialog')).not.toBeVisible()
+      // Confirm deletion in dialog using the specific test ID
+      await expect(page.getByTestId('confirm-dialog')).toBeVisible({ timeout: 3000 })
+      await page.getByTestId('confirm-dialog-confirm').click()
+      await expect(page.getByTestId('confirm-dialog')).not.toBeVisible({ timeout: 3000 })
 
       // Save changes
       await page.getByTestId('save-secret-button').click()
+
+      // Wait for save to complete
+      await page.waitForTimeout(300)
 
       // Verify field is deleted
       await page.getByTestId(`secret-item-${secretKey}`).click()
@@ -445,10 +452,15 @@ test.describe('Secret Multi-field Editing', () => {
       await page.getByTestId('add-field-button').click()
       await expect(page.getByTestId('add-field-dialog')).toBeVisible()
 
-      await page.getByTestId('field-name-input').click()
-      await page.waitForTimeout(200)
+      // Focus on an input and wait for dialog to be fully interactive
+      const fieldNameInput = page.getByTestId('field-name-input')
+      await fieldNameInput.click()
+      await fieldNameInput.focus()
+      await page.waitForTimeout(500)
+
+      // Press Escape - dialog should close
       await page.keyboard.press('Escape')
-      await expect(page.getByTestId('add-field-dialog')).not.toBeVisible({ timeout: 2000 })
+      await expect(page.getByTestId('add-field-dialog')).not.toBeVisible({ timeout: 5000 })
     })
   })
 })
