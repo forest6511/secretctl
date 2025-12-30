@@ -155,8 +155,7 @@ test.describe('Secret Multi-field Editing', () => {
 
       // Verify the change
       await page.getByTestId(`secret-item-${secretKey}`).click()
-      await page.getByTestId('toggle-field-username').click() // Show value
-      await expect(page.getByTestId('field-username')).toContainText('newusername')
+      await expect(page.getByTestId('field-value-username')).toHaveValue('newusername')
     })
 
     test('should toggle field sensitivity', async ({ page }) => {
@@ -175,8 +174,9 @@ test.describe('Secret Multi-field Editing', () => {
 
       // Verify field is now sensitive (should show masked by default)
       await page.getByTestId(`secret-item-${secretKey}`).click()
-      const fieldValue = page.getByTestId('field-username')
-      await expect(fieldValue).toContainText('****')
+      const fieldValue = page.getByTestId('field-value-username')
+      await expect(fieldValue).toHaveValue('••••••••')
+      await expect(fieldValue).toHaveAttribute('type', 'password')
     })
 
     test('should delete a field', async ({ page }) => {
@@ -197,11 +197,13 @@ test.describe('Secret Multi-field Editing', () => {
       await page.getByTestId(`secret-item-${secretKey}`).click()
       await page.getByTestId('edit-secret-button').click()
 
+      await expect(page.getByTestId('delete-field-extra_field')).toBeVisible()
       await page.getByTestId('delete-field-extra_field').click()
 
       // Confirm deletion in dialog
-      await expect(page.getByText('Delete Field')).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Delete' })).toBeVisible()
       await page.getByRole('button', { name: 'Delete' }).click()
+      await page.waitForTimeout(200)
 
       // Save changes
       await page.getByTestId('save-secret-button').click()
@@ -442,8 +444,10 @@ test.describe('Secret Multi-field Editing', () => {
       await page.getByTestId('add-field-button').click()
       await expect(page.getByTestId('add-field-dialog')).toBeVisible()
 
+      await page.getByTestId('field-name-input').focus()
+      await page.waitForTimeout(100)
       await page.keyboard.press('Escape')
-      await page.waitForTimeout(300)
+      await page.waitForTimeout(500)
       await expect(page.getByTestId('add-field-dialog')).not.toBeVisible()
     })
   })
