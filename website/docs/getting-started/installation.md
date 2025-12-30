@@ -19,12 +19,15 @@ brew install forest6511/tap/secretctl
 ### Manual Download
 
 ```bash
-# Download the latest release
-curl -LO https://github.com/forest6511/secretctl/releases/latest/download/secretctl-darwin-arm64.tar.gz
+# Apple Silicon (M1/M2/M3)
+curl -LO https://github.com/forest6511/secretctl/releases/latest/download/secretctl-darwin-arm64
+chmod +x secretctl-darwin-arm64
+sudo mv secretctl-darwin-arm64 /usr/local/bin/secretctl
 
-# Extract and install
-tar -xzf secretctl-darwin-arm64.tar.gz
-sudo mv secretctl /usr/local/bin/
+# Intel Mac
+curl -LO https://github.com/forest6511/secretctl/releases/latest/download/secretctl-darwin-amd64
+chmod +x secretctl-darwin-amd64
+sudo mv secretctl-darwin-amd64 /usr/local/bin/secretctl
 ```
 
 ## Linux
@@ -33,22 +36,22 @@ sudo mv secretctl /usr/local/bin/
 
 ```bash
 # For x86_64
-curl -LO https://github.com/forest6511/secretctl/releases/latest/download/secretctl-linux-amd64.tar.gz
-tar -xzf secretctl-linux-amd64.tar.gz
-sudo mv secretctl /usr/local/bin/
+curl -LO https://github.com/forest6511/secretctl/releases/latest/download/secretctl-linux-amd64
+chmod +x secretctl-linux-amd64
+sudo mv secretctl-linux-amd64 /usr/local/bin/secretctl
 
 # For ARM64
-curl -LO https://github.com/forest6511/secretctl/releases/latest/download/secretctl-linux-arm64.tar.gz
-tar -xzf secretctl-linux-arm64.tar.gz
-sudo mv secretctl /usr/local/bin/
+curl -LO https://github.com/forest6511/secretctl/releases/latest/download/secretctl-linux-arm64
+chmod +x secretctl-linux-arm64
+sudo mv secretctl-linux-arm64 /usr/local/bin/secretctl
 ```
 
 ## Windows
 
 ### Download Binary
 
-1. Download from [GitHub Releases](https://github.com/forest6511/secretctl/releases)
-2. Extract `secretctl-windows-amd64.zip`
+1. Download `secretctl-windows-amd64.exe` from [GitHub Releases](https://github.com/forest6511/secretctl/releases/latest)
+2. Rename to `secretctl.exe`
 3. Add to your PATH
 
 ## Verify Installation

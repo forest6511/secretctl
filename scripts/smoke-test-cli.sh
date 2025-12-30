@@ -24,7 +24,7 @@ trap cleanup EXIT
 
 # Export environment
 export SECRETCTL_VAULT_DIR="$TEST_VAULT_DIR"
-export SECRETCTL_MASTER_PASSWORD="$TEST_PASSWORD"
+export SECRETCTL_PASSWORD="$TEST_PASSWORD"
 
 # Test 1: Version
 echo "1. Testing version..."

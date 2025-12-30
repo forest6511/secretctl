@@ -55,7 +55,7 @@ The compiled app will be in `desktop/build/bin/`.
 5. Click "Create"
 
 :::tip Choosing a Master Password
-- Use at least 12 characters
+- Minimum 8 characters required, 12+ recommended
 - Mix letters, numbers, and symbols
 - Consider using a passphrase like "correct-horse-battery-staple"
 - **Write it down** and store it safely - there's no recovery if you forget it!

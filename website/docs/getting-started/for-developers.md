@@ -57,7 +57,8 @@ secretctl init
 You'll be prompted to create a master password. Choose a strong password - this protects all your secrets.
 
 :::tip Password Requirements
-- Minimum 12 characters
+- Minimum 8 characters (required)
+- 12+ characters recommended for strong security
 - Mix of uppercase, lowercase, numbers, and symbols recommended
 :::
 
@@ -144,7 +145,7 @@ secretctl run --env dev -k "db/*" -- ./migrate.sh
 # GitHub Actions example
 - name: Deploy
   env:
-    SECRETCTL_MASTER_PASSWORD: ${{ secrets.SECRETCTL_PASSWORD }}
+    SECRETCTL_PASSWORD: ${{ secrets.SECRETCTL_PASSWORD }}
   run: |
     secretctl run -k "aws/*" -- ./deploy.sh
 ```
