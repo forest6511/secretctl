@@ -33,11 +33,8 @@ builds:
 
 archives:
   - id: secretctl
-    builds:
-      - secretctl
     formats:
       - tar.gz
-      - zip
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
