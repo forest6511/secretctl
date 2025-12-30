@@ -63,6 +63,17 @@ func addTestSecretWithExpiration(t *testing.T, v *vault.Vault, key string, value
 	}
 }
 
+// addTestSecretMultiField adds a multi-field secret to the vault for testing
+func addTestSecretMultiField(t *testing.T, v *vault.Vault, key string, fields map[string]vault.Field) {
+	t.Helper()
+	entry := &vault.SecretEntry{
+		Fields: fields,
+	}
+	if err := v.SetSecret(key, entry); err != nil {
+		t.Fatalf("failed to add multi-field secret '%s': %v", key, err)
+	}
+}
+
 // createTestPolicy creates a test policy file
 func createTestPolicy(t *testing.T, vaultPath string, content string) {
 	t.Helper()
@@ -470,6 +481,138 @@ func TestHandleSecretGetMasked_EmptyKey(t *testing.T) {
 	_, _, err := server.handleSecretGetMasked(ctx, nil, SecretGetMaskedInput{Key: ""})
 	if err == nil {
 		t.Error("expected error for empty key")
+	}
+}
+
+func TestHandleSecretGetMasked_MultiField(t *testing.T) {
+	v, tmpDir := testVault(t)
+
+	// Add multi-field secret with sensitive and non-sensitive fields
+	fields := map[string]vault.Field{
+		"username": {Value: "dbadmin", Sensitive: false},
+		"password": {Value: "supersecretpassword123", Sensitive: true},
+		"host":     {Value: "db.example.com", Sensitive: false},
+	}
+	addTestSecretMultiField(t, v, "db/postgres", fields)
+
+	server := &Server{
+		vault:     v,
+		vaultPath: tmpDir,
+		runSem:    make(chan struct{}, maxConcurrentRuns),
+	}
+
+	ctx := context.Background()
+	_, output, err := server.handleSecretGetMasked(ctx, nil, SecretGetMaskedInput{Key: "db/postgres"})
+	if err != nil {
+		t.Fatalf("handleSecretGetMasked failed: %v", err)
+	}
+
+	// Verify basic output
+	if output.Key != "db/postgres" {
+		t.Errorf("expected key 'db/postgres', got '%s'", output.Key)
+	}
+	if output.FieldCount != 3 {
+		t.Errorf("expected field_count 3, got %d", output.FieldCount)
+	}
+
+	// For multi-field secrets, MaskedValue and ValueLength should be empty/0
+	// (they are only used for backward compatibility with single-value secrets)
+	if output.MaskedValue != "" {
+		t.Errorf("multi-field secrets should have empty MaskedValue, got '%s'", output.MaskedValue)
+	}
+	if output.ValueLength != 0 {
+		t.Errorf("multi-field secrets should have ValueLength 0, got %d", output.ValueLength)
+	}
+
+	// Verify fields map is populated
+	if output.Fields == nil {
+		t.Fatal("expected Fields map to be populated for multi-field secret")
+	}
+	if len(output.Fields) != 3 {
+		t.Errorf("expected 3 fields, got %d", len(output.Fields))
+	}
+
+	// Verify non-sensitive field shows full value
+	usernameField, ok := output.Fields["username"]
+	if !ok {
+		t.Fatal("expected 'username' field in output")
+	}
+	if usernameField.Value != "dbadmin" {
+		t.Errorf("non-sensitive field should show full value, got '%s'", usernameField.Value)
+	}
+	if usernameField.Sensitive != false {
+		t.Error("expected username.sensitive to be false")
+	}
+
+	// Verify sensitive field is masked
+	passwordField, ok := output.Fields["password"]
+	if !ok {
+		t.Fatal("expected 'password' field in output")
+	}
+	if passwordField.Value == "supersecretpassword123" {
+		t.Error("sensitive field should be masked")
+	}
+	if passwordField.Sensitive != true {
+		t.Error("expected password.sensitive to be true")
+	}
+	if passwordField.ValueLength != 22 {
+		t.Errorf("expected password value_length 22, got %d", passwordField.ValueLength)
+	}
+	// Password is 22 chars, should show last 4
+	expectedMasked := "******************d123"
+	if passwordField.Value != expectedMasked {
+		t.Errorf("expected masked password '%s', got '%s'", expectedMasked, passwordField.Value)
+	}
+
+	// Verify host field (non-sensitive)
+	hostField, ok := output.Fields["host"]
+	if !ok {
+		t.Fatal("expected 'host' field in output")
+	}
+	if hostField.Value != "db.example.com" {
+		t.Errorf("non-sensitive host field should show full value, got '%s'", hostField.Value)
+	}
+}
+
+func TestHandleSecretGetMasked_MaskingBoundaries(t *testing.T) {
+	v, tmpDir := testVault(t)
+
+	// Test masking boundary cases with multi-field secret
+	fields := map[string]vault.Field{
+		"short":  {Value: "1234", Sensitive: true},      // 4 chars -> all asterisks
+		"medium": {Value: "12345678", Sensitive: true},  // 8 chars -> last 2 visible
+		"long":   {Value: "123456789", Sensitive: true}, // 9 chars -> last 4 visible
+	}
+	addTestSecretMultiField(t, v, "test/boundaries", fields)
+
+	server := &Server{
+		vault:     v,
+		vaultPath: tmpDir,
+		runSem:    make(chan struct{}, maxConcurrentRuns),
+	}
+
+	ctx := context.Background()
+	_, output, err := server.handleSecretGetMasked(ctx, nil, SecretGetMaskedInput{Key: "test/boundaries"})
+	if err != nil {
+		t.Fatalf("handleSecretGetMasked failed: %v", err)
+	}
+
+	// Test 1-4 chars: all asterisks
+	shortField := output.Fields["short"]
+	if shortField.Value != "****" {
+		t.Errorf("1-4 char masking: expected '****', got '%s'", shortField.Value)
+	}
+
+	// Test 5-8 chars: last 2 visible
+	mediumField := output.Fields["medium"]
+	if mediumField.Value != "******78" {
+		t.Errorf("5-8 char masking: expected '******78', got '%s'", mediumField.Value)
+	}
+
+	// Test 9+ chars: last 4 visible
+	longField := output.Fields["long"]
+	if longField.Value != "*****6789" {
+		t.Errorf("9+ char masking: expected '*****6789', got '%s'", longField.Value)
 	}
 }
 

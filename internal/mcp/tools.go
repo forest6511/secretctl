@@ -71,8 +71,17 @@ type SecretGetMaskedInput struct {
 
 // SecretGetMaskedOutput represents output for secret_get_masked tool.
 type SecretGetMaskedOutput struct {
-	Key         string `json:"key"`
-	MaskedValue string `json:"masked_value"`
+	Key         string                 `json:"key"`
+	MaskedValue string                 `json:"masked_value"`
+	ValueLength int                    `json:"value_length"`
+	FieldCount  int                    `json:"field_count"`
+	Fields      map[string]MaskedField `json:"fields,omitempty"`
+}
+
+// MaskedField represents a field with its value (masked if sensitive).
+type MaskedField struct {
+	Value       string `json:"value"`
+	Sensitive   bool   `json:"sensitive"`
 	ValueLength int    `json:"value_length"`
 }
 
@@ -240,6 +249,8 @@ func (s *Server) handleSecretExists(_ context.Context, _ *mcp.CallToolRequest, i
 }
 
 // handleSecretGetMasked handles the secret_get_masked tool call.
+// For multi-field secrets, returns all fields with masking for sensitive ones.
+// For legacy single-value secrets, maintains backward compatibility.
 func (s *Server) handleSecretGetMasked(_ context.Context, _ *mcp.CallToolRequest, input SecretGetMaskedInput) (*mcp.CallToolResult, SecretGetMaskedOutput, error) {
 	if input.Key == "" {
 		_ = s.vault.Audit().LogError(audit.OpSecretGetMasked, audit.SourceMCP, "", "INVALID_INPUT", "key is required")
@@ -252,17 +263,41 @@ func (s *Server) handleSecretGetMasked(_ context.Context, _ *mcp.CallToolRequest
 		return nil, SecretGetMaskedOutput{}, fmt.Errorf("failed to get secret: %w", err)
 	}
 
-	// Mask the value per mcp-design-ja.md §3.3
-	masked := maskValue(entry.Value)
+	// Build output with backward compatibility
+	output := SecretGetMaskedOutput{
+		Key:         input.Key,
+		MaskedValue: maskValue(entry.Value),
+		ValueLength: len(entry.Value),
+		FieldCount:  1, // Default for legacy secrets
+	}
+
+	// For multi-field secrets, include all fields with appropriate masking
+	if len(entry.Fields) > 0 {
+		output.FieldCount = len(entry.Fields)
+		output.Fields = make(map[string]MaskedField, len(entry.Fields))
+
+		for name, field := range entry.Fields {
+			mf := MaskedField{
+				Sensitive:   field.Sensitive,
+				ValueLength: len(field.Value),
+			}
+
+			if field.Sensitive {
+				// Mask sensitive field values
+				mf.Value = maskValue([]byte(field.Value))
+			} else {
+				// Show non-sensitive field values in full
+				mf.Value = field.Value
+			}
+
+			output.Fields[name] = mf
+		}
+	}
 
 	// Log successful masked get
 	_ = s.vault.Audit().LogSuccess(audit.OpSecretGetMasked, audit.SourceMCP, input.Key)
 
-	return nil, SecretGetMaskedOutput{
-		Key:         input.Key,
-		MaskedValue: masked,
-		ValueLength: len(entry.Value),
-	}, nil
+	return nil, output, nil
 }
 
 // maskValue masks a secret value per mcp-design-ja.md §3.3
