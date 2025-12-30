@@ -191,6 +191,7 @@ test.describe('Secret Multi-field Editing', () => {
       await page.getByTestId('field-name-input').fill('extra_field')
       await page.getByTestId('field-value-input').fill('extravalue')
       await page.getByTestId('add-field-confirm').click()
+      await expect(page.getByTestId('add-field-dialog')).not.toBeVisible()
       await page.getByTestId('save-secret-button').click()
 
       // Now delete the extra field
@@ -203,7 +204,7 @@ test.describe('Secret Multi-field Editing', () => {
       // Confirm deletion in dialog
       await expect(page.getByRole('button', { name: 'Delete' })).toBeVisible()
       await page.getByRole('button', { name: 'Delete' }).click()
-      await page.waitForTimeout(200)
+      await expect(page.getByTestId('confirm-dialog')).not.toBeVisible()
 
       // Save changes
       await page.getByTestId('save-secret-button').click()
@@ -444,11 +445,10 @@ test.describe('Secret Multi-field Editing', () => {
       await page.getByTestId('add-field-button').click()
       await expect(page.getByTestId('add-field-dialog')).toBeVisible()
 
-      await page.getByTestId('field-name-input').focus()
-      await page.waitForTimeout(100)
+      await page.getByTestId('field-name-input').click()
+      await page.waitForTimeout(200)
       await page.keyboard.press('Escape')
-      await page.waitForTimeout(500)
-      await expect(page.getByTestId('add-field-dialog')).not.toBeVisible()
+      await expect(page.getByTestId('add-field-dialog')).not.toBeVisible({ timeout: 2000 })
     })
   })
 })

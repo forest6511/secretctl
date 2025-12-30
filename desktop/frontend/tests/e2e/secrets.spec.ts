@@ -84,8 +84,9 @@ test.describe('Secret Management', () => {
         fieldValue: 'testvalue',
       })
 
+      await page.waitForTimeout(200)
       const secretItem = page.getByTestId(secretItemTestId)
-      await expect(secretItem.locator('text=1 field')).toBeVisible()
+      await expect(secretItem.locator('text=1 field')).toBeVisible({ timeout: 5000 })
 
       // Cleanup: delete the test secret
       await page.getByTestId(secretItemTestId).click()
