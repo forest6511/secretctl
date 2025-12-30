@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2025-12-30
+
+### Added
+- **Multi-Field Secrets (Phase 2.5)** - Support for storing multiple key-value pairs in a single secret
+  - New `Fields` map with name, value, and sensitivity settings per field
+  - Database schema migration to v3 with backward compatibility
+  - Well-known field names: `username`, `password`, `url`, `notes`, `host`, `port`, `database`, `api_key`
+
+- **CLI Multi-Field Support**
+  - `set --field name=value` for adding individual fields
+  - `set --template login|database|api|ssh` for pre-defined templates
+  - `set --binding field=ENV_VAR` for environment variable mappings
+  - `get --field name` to retrieve a specific field
+  - `get --fields` to list all field names
+
+- **MCP Multi-Field Tools**
+  - `secret_list` now includes `field_count` for each secret
+  - `secret_list_fields` to list all field names for a secret
+  - `secret_get_field` to retrieve a specific non-sensitive field value
+  - `secret_get_masked` extended with `fields` map showing all fields with masking
+  - `secret_run_with_bindings` for flexible environment variable injection
+
+- **Desktop App Multi-Field UI**
+  - Multi-field editing interface with add/remove field buttons
+  - Template selection dropdown (Login, Database, API, SSH)
+  - Sensitive field toggle per field
+  - Field-level visibility controls
+
+- **Documentation**
+  - Well-known field names reference (`website/docs/reference/field-names.md`)
+  - Updated MCP tools documentation with multi-field examples
+
+### Security
+- Sensitive field values are always masked in MCP responses
+- Non-sensitive fields can be read via `secret_get_field` (e.g., username, host)
+- `field_count` stored in plaintext for efficient querying (Option D+ compliant)
+
 ## [0.6.0] - 2025-12-24
 
 ### Added
