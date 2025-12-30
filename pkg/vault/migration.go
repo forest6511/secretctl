@@ -12,8 +12,10 @@ const (
 	SchemaVersion1 = 1
 	// SchemaVersion2 adds multi-field support (Phase 2.5)
 	SchemaVersion2 = 2
+	// SchemaVersion3 adds field_count column for MCP secret_list
+	SchemaVersion3 = 3
 	// CurrentSchemaVersion is the current schema version
-	CurrentSchemaVersion = SchemaVersion2
+	CurrentSchemaVersion = SchemaVersion3
 )
 
 // getSchemaVersion returns the current schema version from the database.
@@ -80,6 +82,12 @@ func migrateSchema(db *sql.DB) error {
 	if version < SchemaVersion2 {
 		if err := migrateToV2(db); err != nil {
 			return fmt.Errorf("vault: migration to v2 failed: %w", err)
+		}
+	}
+
+	if version < SchemaVersion3 {
+		if err := migrateToV3(db); err != nil {
+			return fmt.Errorf("vault: migration to v3 failed: %w", err)
 		}
 	}
 
@@ -178,4 +186,52 @@ func getTableColumns(tx *sql.Tx, tableName string) (map[string]bool, error) {
 	}
 
 	return columns, rows.Err()
+}
+
+// migrateToV3 adds field_count column for MCP secret_list.
+// This migration:
+// 1. Adds field_count column (INTEGER, default 1 for legacy single-value secrets)
+// 2. Updates schema version
+//
+// The field_count is stored in plaintext (not encrypted) as it's not sensitive
+// and allows efficient querying without decryption (Option D+ compliant).
+//
+// Note: Multi-field secrets created on v2 schema will have incorrect field_count=1
+// until re-saved. This is acceptable because:
+// - Phase 2.5 (multi-field) ships together with v3 schema in v0.7.0
+// - No production data with multi-field secrets exists before this release
+// - Re-saving any secret will recalculate the correct field_count
+func migrateToV3(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Check if columns already exist (idempotent migration)
+	columns, err := getTableColumns(tx, "secrets")
+	if err != nil {
+		return fmt.Errorf("failed to get table columns: %w", err)
+	}
+
+	// Add field_count column if it doesn't exist
+	// Default to 1 for existing secrets (legacy single-value format)
+	if !columns["field_count"] {
+		_, err = tx.Exec("ALTER TABLE secrets ADD COLUMN field_count INTEGER DEFAULT 1")
+		if err != nil {
+			return fmt.Errorf("failed to add field_count column: %w", err)
+		}
+	}
+
+	// Update schema version
+	_, err = tx.Exec("INSERT OR REPLACE INTO schema_version (version) VALUES (?)", SchemaVersion3)
+	if err != nil {
+		return fmt.Errorf("failed to set schema version: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit migration: %w", err)
+	}
+
+	return nil
 }

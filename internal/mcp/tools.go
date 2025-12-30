@@ -37,13 +37,14 @@ type SecretListOutput struct {
 
 // SecretInfo represents metadata for a secret (no value).
 type SecretInfo struct {
-	Key       string   `json:"key"`
-	Tags      []string `json:"tags,omitempty"`
-	ExpiresAt string   `json:"expires_at,omitempty"`
-	HasNotes  bool     `json:"has_notes"`
-	HasURL    bool     `json:"has_url"`
-	CreatedAt string   `json:"created_at"`
-	UpdatedAt string   `json:"updated_at"`
+	Key        string   `json:"key"`
+	FieldCount int      `json:"field_count"`
+	Tags       []string `json:"tags,omitempty"`
+	ExpiresAt  string   `json:"expires_at,omitempty"`
+	HasNotes   bool     `json:"has_notes"`
+	HasURL     bool     `json:"has_url"`
+	CreatedAt  string   `json:"created_at"`
+	UpdatedAt  string   `json:"updated_at"`
 }
 
 // SecretExistsInput represents input for secret_exists tool.
@@ -178,12 +179,13 @@ func (s *Server) handleSecretList(_ context.Context, _ *mcp.CallToolRequest, inp
 
 	for _, entry := range entries {
 		info := SecretInfo{
-			Key:       entry.Key,
-			Tags:      entry.Tags,
-			HasNotes:  entry.Metadata != nil && entry.Metadata.Notes != "",
-			HasURL:    entry.Metadata != nil && entry.Metadata.URL != "",
-			CreatedAt: entry.CreatedAt.Format(time.RFC3339),
-			UpdatedAt: entry.UpdatedAt.Format(time.RFC3339),
+			Key:        entry.Key,
+			FieldCount: entry.FieldCount,
+			Tags:       entry.Tags,
+			HasNotes:   entry.Metadata != nil && entry.Metadata.Notes != "",
+			HasURL:     entry.Metadata != nil && entry.Metadata.URL != "",
+			CreatedAt:  entry.CreatedAt.Format(time.RFC3339),
+			UpdatedAt:  entry.UpdatedAt.Format(time.RFC3339),
 		}
 		if entry.ExpiresAt != nil {
 			info.ExpiresAt = entry.ExpiresAt.Format(time.RFC3339)

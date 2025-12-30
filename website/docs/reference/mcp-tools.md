@@ -51,6 +51,7 @@ List all secret keys with metadata. Returns key names, tags, expiration, and fla
   "secrets": [
     {
       "key": "string",
+      "field_count": "number",
       "tags": ["string"],
       "expires_at": "string (RFC 3339, optional)",
       "has_notes": "boolean",
@@ -61,6 +62,17 @@ List all secret keys with metadata. Returns key names, tags, expiration, and fla
   ]
 }
 ```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `key` | string | Secret key name |
+| `field_count` | number | Number of fields (1 for legacy single-value secrets) |
+| `tags` | array | Tags associated with the secret |
+| `expires_at` | string | Expiration date in RFC 3339 format (optional) |
+| `has_notes` | boolean | Whether the secret has notes |
+| `has_url` | boolean | Whether the secret has a URL |
+| `created_at` | string | Creation timestamp in RFC 3339 format |
+| `updated_at` | string | Last update timestamp in RFC 3339 format |
 
 ### Examples
 
@@ -75,6 +87,7 @@ List all secret keys with metadata. Returns key names, tags, expiration, and fla
   "secrets": [
     {
       "key": "AWS_ACCESS_KEY",
+      "field_count": 1,
       "tags": ["aws", "prod"],
       "has_notes": false,
       "has_url": true,
@@ -82,7 +95,8 @@ List all secret keys with metadata. Returns key names, tags, expiration, and fla
       "updated_at": "2025-01-15T10:30:00Z"
     },
     {
-      "key": "DB_PASSWORD",
+      "key": "db/prod",
+      "field_count": 5,
       "tags": ["db", "prod"],
       "expires_at": "2025-06-15T00:00:00Z",
       "has_notes": true,

@@ -235,6 +235,90 @@ func getTableColumnsFromDB(db *sql.DB, tableName string) (map[string]bool, error
 	return getTableColumns(tx, tableName)
 }
 
+func TestMigrateToV3(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer db.Close()
+
+	// Create v2 schema (without field_count column)
+	_, err = db.Exec(`
+		CREATE TABLE secrets (
+			key_hash TEXT PRIMARY KEY,
+			encrypted_value BLOB NOT NULL,
+			encrypted_key BLOB NOT NULL,
+			encrypted_fields BLOB,
+			encrypted_bindings BLOB,
+			encrypted_metadata BLOB,
+			schema TEXT,
+			tags TEXT,
+			expires_at TIMESTAMP,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		t.Fatalf("failed to create v2 schema: %v", err)
+	}
+
+	// Set schema version to 2
+	if err := setSchemaVersion(db, SchemaVersion2); err != nil {
+		t.Fatalf("setSchemaVersion failed: %v", err)
+	}
+
+	// Add some test data
+	_, err = db.Exec(`
+		INSERT INTO secrets (key_hash, encrypted_value, encrypted_key)
+		VALUES ('hash1', X'0102030405', X'0102030405')
+	`)
+	if err != nil {
+		t.Fatalf("failed to insert test data: %v", err)
+	}
+
+	// Run migration
+	if err := migrateToV3(db); err != nil {
+		t.Fatalf("migrateToV3 failed: %v", err)
+	}
+
+	// Verify new column exists
+	columns, err := getTableColumnsFromDB(db, "secrets")
+	if err != nil {
+		t.Fatalf("failed to get columns: %v", err)
+	}
+
+	if !columns["field_count"] {
+		t.Error("missing field_count column after migration")
+	}
+
+	// Verify default value (existing rows should have field_count = 1)
+	var fieldCount int
+	err = db.QueryRow("SELECT field_count FROM secrets WHERE key_hash = 'hash1'").Scan(&fieldCount)
+	if err != nil {
+		t.Fatalf("failed to query field_count: %v", err)
+	}
+	if fieldCount != 1 {
+		t.Errorf("expected default field_count = 1, got %d", fieldCount)
+	}
+
+	// Verify schema version
+	version, err := getSchemaVersion(db)
+	if err != nil {
+		t.Fatalf("getSchemaVersion failed: %v", err)
+	}
+	if version != SchemaVersion3 {
+		t.Errorf("expected schema version %d, got %d", SchemaVersion3, version)
+	}
+
+	// Run migration again (should be idempotent)
+	if err := migrateToV3(db); err != nil {
+		t.Fatalf("migrateToV3 (idempotent) failed: %v", err)
+	}
+}
+
 func TestVaultSchemaMigrationOnUnlock(t *testing.T) {
 	tmpDir := t.TempDir()
 
