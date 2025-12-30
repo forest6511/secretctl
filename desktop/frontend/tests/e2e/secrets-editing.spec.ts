@@ -452,15 +452,22 @@ test.describe('Secret Multi-field Editing', () => {
       await page.getByTestId('add-field-button').click()
       await expect(page.getByTestId('add-field-dialog')).toBeVisible()
 
-      // Focus on an input and wait for dialog to be fully interactive
-      const fieldNameInput = page.getByTestId('field-name-input')
-      await fieldNameInput.click()
-      await fieldNameInput.focus()
-      await page.waitForTimeout(500)
+      // Wait for dialog to be fully interactive
+      await page.waitForTimeout(300)
 
-      // Press Escape using locator.press() - recommended for headless mode
-      // See: https://github.com/microsoft/playwright/issues/2025
-      await fieldNameInput.press('Escape')
+      // The AddFieldDialog component uses window.addEventListener('keydown', ...)
+      // In headless/xvfb environment, we need to dispatch KeyboardEvent directly to window
+      await page.evaluate(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'Escape',
+          code: 'Escape',
+          keyCode: 27,
+          which: 27,
+          bubbles: true,
+          cancelable: true
+        }))
+      })
+
       await expect(page.getByTestId('add-field-dialog')).not.toBeVisible({ timeout: 5000 })
     })
   })
