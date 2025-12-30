@@ -34,8 +34,50 @@ builds:
 archives:
   - id: cli-archives
     formats:
-      - binary
-    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+      - tar.gz
+      - zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+
+# ===========================================
+# Homebrew Tap (macOS/Linux)
+# ===========================================
+brews:
+  - name: secretctl
+    ids:
+      - secretctl
+    repository:
+      owner: forest6511
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/forest6511/secretctl"
+    description: "The simplest AI-ready secrets manager"
+    license: "MIT"
+    install: |
+      bin.install "secretctl"
+    test: |
+      system "#{bin}/secretctl", "version"
+
+# ===========================================
+# Scoop Bucket (Windows)
+# ===========================================
+scoops:
+  - name: secretctl
+    ids:
+      - secretctl
+    repository:
+      owner: forest6511
+      name: scoop-bucket
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: "https://github.com/forest6511/secretctl"
+    description: "The simplest AI-ready secrets manager"
+    license: MIT
 
 checksum:
   name_template: 'checksums.txt'
