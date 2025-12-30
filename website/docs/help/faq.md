@@ -131,10 +131,13 @@ Add the MCP server to your Claude Code configuration:
 
 | Tool | Description |
 |------|-------------|
-| `secret_list` | List all secret keys |
+| `secret_list` | List all secret keys with metadata |
 | `secret_exists` | Check if a secret exists |
 | `secret_get_masked` | Get masked value (e.g., `****WXYZ`) |
 | `secret_run` | Run command with secrets as env vars |
+| `secret_list_fields` | List field names for multi-field secrets |
+| `secret_get_field` | Get non-sensitive field values only |
+| `secret_run_with_bindings` | Run with predefined environment bindings |
 
 ### Why is there no `secret_get` MCP tool?
 
@@ -167,19 +170,31 @@ This indicates the audit log may have been tampered with. While secrets remain s
 
 ## Roadmap
 
-### What features are planned?
+### What features are available?
 
-**Phase 2.5 (Multi-Field Secrets)** - Planned for a future release:
+**Phase 2.5 (Multi-Field Secrets)** - ✅ Shipped:
 - Store multiple fields per secret (e.g., username + password + host)
-- Pre-defined templates for common secret types (database, API, SSH)
+- Pre-defined templates for common secret types (Login, Database, API, SSH)
 - Field-level sensitivity control for MCP integration
+- Environment variable bindings for `secret_run`
 
-This feature is not yet implemented. Currently, each secret stores a single value. For complex credentials, you can use key prefixes to group related secrets:
+**Using multi-field secrets in CLI:**
 
 ```bash
-echo "db.example.com" | secretctl set db/prod/host
-echo "myuser" | secretctl set db/prod/user
-echo "secret123" | secretctl set db/prod/password
+# Create a multi-field secret
+secretctl set db/prod --field host=db.example.com --field user=myuser --field password=secret123
+
+# Get a specific field
+secretctl get db/prod --field host
+
+# Run with bindings
+secretctl run -k db/prod -- ./my-app
 ```
+
+**Using templates in Desktop App:**
+1. Click "Add Secret"
+2. Select a template (Login, Database, API, SSH)
+3. Fields and bindings are auto-configured
+4. Fill in the values and save
 
 See the [project roadmap](https://github.com/forest6511/secretctl) for the latest development status.

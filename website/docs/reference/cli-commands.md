@@ -39,7 +39,7 @@ Vault initialized successfully.
 
 ## set
 
-Store a secret value from standard input.
+Store a secret value from standard input, or create multi-field secrets.
 
 ```bash
 secretctl set [key] [flags]
@@ -49,6 +49,9 @@ secretctl set [key] [flags]
 
 | Flag | Description |
 |------|-------------|
+| `--field name=value` | Add a field to the secret (repeatable) |
+| `--binding ENV=field` | Add environment binding (repeatable) |
+| `--sensitive name` | Mark a field as sensitive (repeatable) |
 | `--notes string` | Add notes to the secret |
 | `--tags string` | Comma-separated tags (e.g., `dev,api`) |
 | `--url string` | Add URL reference to the secret |
@@ -57,8 +60,24 @@ secretctl set [key] [flags]
 **Examples:**
 
 ```bash
-# Basic usage (prompts for value)
+# Basic usage (single value from stdin)
 echo "sk-your-api-key" | secretctl set OPENAI_API_KEY
+
+# Multi-field secret
+secretctl set db/prod \
+  --field host=db.example.com \
+  --field port=5432 \
+  --field user=admin \
+  --field password=secret123 \
+  --sensitive password
+
+# With environment bindings
+secretctl set db/prod \
+  --field host=db.example.com \
+  --field password=secret123 \
+  --binding PGHOST=host \
+  --binding PGPASSWORD=password \
+  --sensitive password
 
 # With metadata
 echo "mypassword" | secretctl set DB_PASSWORD \
@@ -74,7 +93,7 @@ echo "temp-token" | secretctl set TEMP_TOKEN --expires="30d"
 
 ## get
 
-Retrieve a secret value.
+Retrieve a secret value or specific fields.
 
 ```bash
 secretctl get [key] [flags]
@@ -84,13 +103,21 @@ secretctl get [key] [flags]
 
 | Flag | Description |
 |------|-------------|
+| `--field name` | Get a specific field value |
+| `--fields` | List all field names (no values) |
 | `--show-metadata` | Show metadata with the secret |
 
 **Examples:**
 
 ```bash
-# Get secret value only
+# Get secret value only (legacy single-value)
 secretctl get API_KEY
+
+# Get a specific field from multi-field secret
+secretctl get db/prod --field host
+
+# List all field names
+secretctl get db/prod --fields
 
 # Get secret with metadata
 secretctl get API_KEY --show-metadata

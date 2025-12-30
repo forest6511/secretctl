@@ -38,20 +38,36 @@ The search matches against secret keys (names).
 When you select a secret, the detail panel shows:
 
 - **Key** - The secret's unique identifier
-- **Value** - The secret content (hidden by default)
+- **Fields** - Multiple named fields with values (e.g., username, password)
+- **Environment Bindings** - Auto-configured environment variable mappings
 - **URL** - Associated URL (if set)
 - **Tags** - Categorization labels
 - **Notes** - Additional information
 - **Created** - When the secret was created
 - **Updated** - When last modified
 
-### Show/Hide Value
+### Multi-Field Secrets
+
+Secrets can contain multiple named fields, each with its own value and sensitivity setting:
+
+| Field Property | Description |
+|---------------|-------------|
+| **Name** | Field identifier (e.g., `username`, `password`) |
+| **Value** | Field content |
+| **Sensitive** | Whether value should be masked (lock icon) |
+
+**Field display:**
+- Sensitive fields show lock icon and masked value (`••••••••`)
+- Non-sensitive fields show unlock icon and visible value
+- Click copy icon to copy individual field values
+
+### Show/Hide Values
 
 Secret values are masked for security:
 
-1. Click the **eye icon** next to the value field
-2. The value becomes visible
-3. Click again to hide
+1. Click the **eye icon** next to a field to reveal its value
+2. Click again to hide
+3. Sensitive fields are masked by default
 
 :::tip
 Values are automatically hidden when you select a different secret.
@@ -64,15 +80,56 @@ Values are automatically hidden when you select a different secret.
 1. Click the **"Add Secret"** button at the bottom of the sidebar
 2. Or press `Cmd/Ctrl + N`
 
+### Using Templates
+
+Templates provide pre-configured field structures for common secret types:
+
+| Template | Fields | Auto-configured Bindings |
+|----------|--------|-------------------------|
+| **Login** | username, password | - |
+| **Database** | host, port, username, password, database | PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE |
+| **API** | api_key, api_secret | API_KEY, API_SECRET |
+| **SSH** | host, username, private_key, passphrase | SSH_HOST, SSH_USER, SSH_KEY, SSH_PASSPHRASE |
+
+**Using a template:**
+1. Click a template card to select it
+2. Fields are auto-populated with the template structure
+3. Environment bindings are automatically configured
+4. Fill in the field values
+5. Click the template again to deselect and reset
+
+:::tip
+Templates speed up secret creation and ensure consistent environment variable bindings for `secret_run` operations.
+:::
+
 ### Fill in the Form
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | Key | Yes | Unique identifier (e.g., `aws/api-key`) |
-| Value | Yes | The secret content |
+| Fields | Yes | At least one field with a value |
 | URL | No | Related URL (e.g., dashboard link) |
 | Tags | No | Comma-separated labels |
 | Notes | No | Additional context |
+
+### Adding Custom Fields
+
+To add fields manually (without a template):
+
+1. Click **"Add Field"** button
+2. Enter field name (e.g., `api_key`)
+3. Enter field value
+4. Toggle **Sensitive** for password-like fields
+5. Click **"Add"**
+
+### Environment Bindings
+
+Bindings map fields to environment variables for `secret_run`:
+
+1. Click **"Add Binding"** button
+2. Enter environment variable name (e.g., `DATABASE_URL`)
+3. Select the field to bind
+4. Click **"Add"**
 
 ### Key Naming
 
@@ -107,8 +164,29 @@ A success toast confirms creation.
 
 When editing:
 - **Key** is read-only (cannot be changed)
-- **Value** can be updated
+- **Fields** can be added, modified, or deleted
+- **Bindings** can be added or removed
 - **Metadata** (URL, tags, notes) can be modified
+
+### Editing Fields
+
+**Modify field values:**
+1. Click on a field value to edit it
+2. Type the new value
+3. Changes are saved when you click **"Save"**
+
+**Toggle sensitivity:**
+1. Click the lock/unlock icon next to a field
+2. Sensitive fields are masked in the UI
+
+**Delete a field:**
+1. Click the trash icon next to the field
+2. Confirm deletion in the dialog
+
+**Add new fields:**
+1. Click **"Add Field"** button
+2. Enter field details
+3. Save the secret
 
 ### Save Changes
 
@@ -124,7 +202,17 @@ To discard changes:
 
 ## Copying Secrets
 
-### Copy to Clipboard
+### Copy Field Values
+
+For multi-field secrets, copy individual field values:
+
+1. Select a secret
+2. Click the **copy icon** next to the specific field
+3. The field value is copied to clipboard
+
+### Copy to Clipboard (Legacy)
+
+For single-value secrets:
 
 1. Select a secret
 2. Click the **copy icon** next to the value
