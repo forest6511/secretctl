@@ -234,6 +234,7 @@ test.describe('Secret Multi-field Editing', () => {
 
       // Verify binding exists
       await page.getByTestId(`secret-item-${secretKey}`).click()
+      await page.getByTestId('edit-secret-button').click()
       await expect(page.getByTestId('binding-MY_USERNAME')).toBeVisible()
     })
 
@@ -249,13 +250,14 @@ test.describe('Secret Multi-field Editing', () => {
       await page.getByTestId('add-binding-button').click()
       await expect(page.getByTestId('add-binding-dialog')).toBeVisible()
 
-      // Test lowercase (should fail - must be SCREAMING_SNAKE_CASE)
-      await page.getByTestId('binding-envvar-input').fill('lowercase_var')
+      // Test starting with a number (should fail)
+      await page.getByTestId('binding-envvar-input').fill('1INVALID')
       await page.getByTestId('add-binding-confirm').click()
       await expect(page.getByTestId('binding-envvar-error')).toBeVisible()
 
-      // Test with spaces
-      await page.getByTestId('binding-envvar-input').fill('INVALID VAR')
+      // Test with special character
+      await page.getByTestId('binding-envvar-input').clear()
+      await page.getByTestId('binding-envvar-input').fill('INVALID@VAR')
       await page.getByTestId('add-binding-confirm').click()
       await expect(page.getByTestId('binding-envvar-error')).toBeVisible()
 
@@ -377,6 +379,7 @@ test.describe('Secret Multi-field Editing', () => {
 
       // Click to view details
       await page.getByTestId(`secret-item-${secretKey}`).click()
+      await page.getByTestId('edit-secret-button').click()
 
       // Verify fields exist
       await expect(page.getByTestId('field-username')).toBeVisible()
@@ -440,6 +443,7 @@ test.describe('Secret Multi-field Editing', () => {
       await expect(page.getByTestId('add-field-dialog')).toBeVisible()
 
       await page.keyboard.press('Escape')
+      await page.waitForTimeout(300)
       await expect(page.getByTestId('add-field-dialog')).not.toBeVisible()
     })
   })
