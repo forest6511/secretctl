@@ -32,7 +32,9 @@ builds:
       - -X main.date={{.Date}}
 
 archives:
-  - id: cli-archives
+  - id: secretctl
+    builds:
+      - secretctl
     formats:
       - tar.gz
       - zip
