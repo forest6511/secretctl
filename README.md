@@ -358,6 +358,14 @@ secretctl takes security seriously:
 - **Tamper-evident logs** — HMAC chain detects any log manipulation
 - **Output sanitization** — Automatic redaction of secrets in command output
 
+### Master Password
+
+> **Important**: If you forget your master password, your data cannot be recovered. There is no password reset feature by design — secretctl uses zero-knowledge encryption.
+
+- **Password change**: Coming soon (see [#131](https://github.com/forest6511/secretctl/issues/131))
+- **Password reset**: Not possible by design (zero-knowledge)
+- **Recommendation**: Store your master password in a secure location
+
 For reporting security vulnerabilities, please see [SECURITY.md](SECURITY.md).
 
 ## Documentation
