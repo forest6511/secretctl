@@ -20,9 +20,39 @@ Unlike cloud-based solutions, secretctl:
 - Provides AI-safe secret injection (secrets never exposed to LLMs)
 - Ships as a single binary with no dependencies
 
+### How is secretctl different from .env files?
+
+| Aspect | .env files | secretctl |
+|--------|-----------|-----------|
+| **Storage** | Plaintext on disk | AES-256-GCM encrypted |
+| **Git safety** | Easy to accidentally commit | Nothing sensitive in plaintext |
+| **Access control** | Anyone with file access | Master password required |
+| **AI integration** | Expose secrets directly | AI-Safe Access (never exposes plaintext) |
+| **Audit trail** | None | HMAC-chained tamper-evident logs |
+| **Metadata** | None | Tags, notes, expiration, URLs |
+
+secretctl gives you the convenience of .env files with real security.
+
 ### Is secretctl free?
 
 Yes, secretctl is open source and free for personal and commercial use.
+
+### Can I install via Homebrew or Scoop?
+
+Yes! secretctl supports package managers:
+
+**macOS/Linux (Homebrew):**
+```bash
+brew install forest6511/tap/secretctl
+```
+
+**Windows (Scoop):**
+```bash
+scoop bucket add secretctl https://github.com/forest6511/scoop-bucket
+scoop install secretctl
+```
+
+Alternatively, download binaries from [GitHub Releases](https://github.com/forest6511/secretctl/releases).
 
 ## Security
 
