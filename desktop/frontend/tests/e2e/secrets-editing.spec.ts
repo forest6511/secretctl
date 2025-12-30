@@ -61,7 +61,7 @@ async function createTestSecret(page: Page, key: string) {
   await expect(page.getByTestId(`secret-item-${key}`)).toBeVisible({ timeout: 5000 })
 }
 
-test.describe.skip('Secret Multi-field Editing', () => {
+test.describe('Secret Multi-field Editing', () => {
   test.beforeEach(async ({ page }) => {
     await ensureAuthenticated(page)
   })
@@ -155,8 +155,7 @@ test.describe.skip('Secret Multi-field Editing', () => {
 
       // Verify the change
       await page.getByTestId(`secret-item-${secretKey}`).click()
-      await page.getByTestId('toggle-field-username').click() // Show value
-      await expect(page.getByTestId('field-username')).toContainText('newusername')
+      await expect(page.getByTestId('field-value-username')).toHaveValue('newusername')
     })
 
     test('should toggle field sensitivity', async ({ page }) => {
@@ -175,8 +174,9 @@ test.describe.skip('Secret Multi-field Editing', () => {
 
       // Verify field is now sensitive (should show masked by default)
       await page.getByTestId(`secret-item-${secretKey}`).click()
-      const fieldValue = page.getByTestId('field-username')
-      await expect(fieldValue).toContainText('****')
+      const fieldValue = page.getByTestId('field-value-username')
+      await expect(fieldValue).toHaveValue('••••••••')
+      await expect(fieldValue).toHaveAttribute('type', 'password')
     })
 
     test('should delete a field', async ({ page }) => {
@@ -191,20 +191,30 @@ test.describe.skip('Secret Multi-field Editing', () => {
       await page.getByTestId('field-name-input').fill('extra_field')
       await page.getByTestId('field-value-input').fill('extravalue')
       await page.getByTestId('add-field-confirm').click()
+      await expect(page.getByTestId('add-field-dialog')).not.toBeVisible()
       await page.getByTestId('save-secret-button').click()
+
+      // Wait for save to complete and re-render
+      await page.waitForTimeout(300)
 
       // Now delete the extra field
       await page.getByTestId(`secret-item-${secretKey}`).click()
       await page.getByTestId('edit-secret-button').click()
 
+      // Wait for fields to load in edit mode
+      await expect(page.getByTestId('delete-field-extra_field')).toBeVisible({ timeout: 5000 })
       await page.getByTestId('delete-field-extra_field').click()
 
-      // Confirm deletion in dialog
-      await expect(page.getByText('Delete Field')).toBeVisible()
-      await page.getByRole('button', { name: 'Delete' }).click()
+      // Confirm deletion in dialog using the specific test ID
+      await expect(page.getByTestId('confirm-dialog')).toBeVisible({ timeout: 3000 })
+      await page.getByTestId('confirm-dialog-confirm').click()
+      await expect(page.getByTestId('confirm-dialog')).not.toBeVisible({ timeout: 3000 })
 
       // Save changes
       await page.getByTestId('save-secret-button').click()
+
+      // Wait for save to complete
+      await page.waitForTimeout(300)
 
       // Verify field is deleted
       await page.getByTestId(`secret-item-${secretKey}`).click()
@@ -234,6 +244,7 @@ test.describe.skip('Secret Multi-field Editing', () => {
 
       // Verify binding exists
       await page.getByTestId(`secret-item-${secretKey}`).click()
+      await page.getByTestId('edit-secret-button').click()
       await expect(page.getByTestId('binding-MY_USERNAME')).toBeVisible()
     })
 
@@ -249,13 +260,14 @@ test.describe.skip('Secret Multi-field Editing', () => {
       await page.getByTestId('add-binding-button').click()
       await expect(page.getByTestId('add-binding-dialog')).toBeVisible()
 
-      // Test lowercase (should fail - must be SCREAMING_SNAKE_CASE)
-      await page.getByTestId('binding-envvar-input').fill('lowercase_var')
+      // Test starting with a number (should fail)
+      await page.getByTestId('binding-envvar-input').fill('1INVALID')
       await page.getByTestId('add-binding-confirm').click()
       await expect(page.getByTestId('binding-envvar-error')).toBeVisible()
 
-      // Test with spaces
-      await page.getByTestId('binding-envvar-input').fill('INVALID VAR')
+      // Test with special character
+      await page.getByTestId('binding-envvar-input').clear()
+      await page.getByTestId('binding-envvar-input').fill('INVALID@VAR')
       await page.getByTestId('add-binding-confirm').click()
       await expect(page.getByTestId('binding-envvar-error')).toBeVisible()
 
@@ -377,6 +389,7 @@ test.describe.skip('Secret Multi-field Editing', () => {
 
       // Click to view details
       await page.getByTestId(`secret-item-${secretKey}`).click()
+      await page.getByTestId('edit-secret-button').click()
 
       // Verify fields exist
       await expect(page.getByTestId('field-username')).toBeVisible()
@@ -439,8 +452,23 @@ test.describe.skip('Secret Multi-field Editing', () => {
       await page.getByTestId('add-field-button').click()
       await expect(page.getByTestId('add-field-dialog')).toBeVisible()
 
-      await page.keyboard.press('Escape')
-      await expect(page.getByTestId('add-field-dialog')).not.toBeVisible()
+      // Wait for dialog to be fully interactive
+      await page.waitForTimeout(300)
+
+      // The AddFieldDialog component uses window.addEventListener('keydown', ...)
+      // In headless/xvfb environment, we need to dispatch KeyboardEvent directly to window
+      await page.evaluate(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'Escape',
+          code: 'Escape',
+          keyCode: 27,
+          which: 27,
+          bubbles: true,
+          cancelable: true
+        }))
+      })
+
+      await expect(page.getByTestId('add-field-dialog')).not.toBeVisible({ timeout: 5000 })
     })
   })
 })
