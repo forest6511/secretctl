@@ -146,8 +146,10 @@ secretctl follows the same principles that guide 1Password's approach to AI:
 
 ## Quick Links
 
-- [How It Works](/docs/security/how-it-works) - Detailed security architecture
-- [Encryption Details](/docs/security/encryption) - Cryptographic implementation
+- [Threat Model](/docs/security/threat-model) - Visual threat model and attack levels
+- [Security Design](/docs/security/security-design) - Comprehensive security architecture
+- [How It Works](/docs/security/how-it-works) - Technical implementation details
+- [Encryption Details](/docs/security/encryption) - Cryptographic specifications
 - [MCP Tools Reference](/docs/reference/mcp-tools) - AI integration security
 - [Audit Logs](/docs/guides/desktop/audit-logs) - Activity monitoring
 
