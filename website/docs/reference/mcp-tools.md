@@ -10,7 +10,7 @@ Complete API reference for all MCP tools provided by the secretctl MCP server.
 
 ## Overview
 
-The secretctl MCP server implements a security-first design where **AI agents never receive plaintext secrets**. This follows the "Option D+" architecture, aligned with 1Password's "Access Without Exposure" philosophy.
+The secretctl MCP server implements a security-first design where **AI agents never receive plaintext secrets**. This follows the "AI-Safe Access" architecture, aligned with 1Password's "Access Without Exposure" philosophy.
 
 **Available Tools:**
 
@@ -588,7 +588,7 @@ List all field names and metadata for a multi-field secret. Returns field names,
 
 ## secret_get_field
 
-Get a specific field value from a multi-field secret. Only non-sensitive fields can be retrieved (Option D+ policy). Sensitive fields will be rejected.
+Get a specific field value from a multi-field secret. Only non-sensitive fields can be retrieved (AI-Safe Access policy). Sensitive fields will be rejected.
 
 ### Input Schema
 
@@ -646,7 +646,7 @@ Get a specific field value from a multi-field secret. Only non-sensitive fields 
 
 // Error Response
 {
-  "error": "field 'password' is marked as sensitive (Option D+ policy)"
+  "error": "field 'password' is marked as sensitive and cannot be retrieved via MCP (AI-Safe Access policy)"
 }
 ```
 
@@ -777,9 +777,9 @@ The policy file must meet these requirements:
 
 ## Security Design
 
-### Option D+ Architecture
+### AI-Safe Access Architecture
 
-The secretctl MCP server follows the "Option D+" security model:
+The secretctl MCP server follows the "AI-Safe Access" security model:
 
 | Tool | Plaintext Access | Purpose |
 |------|-----------------|---------|

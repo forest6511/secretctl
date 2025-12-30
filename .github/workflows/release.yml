@@ -50,8 +50,8 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
 
-      # Option D+ Compliance Check
-      - name: Option D+ Check - No plaintext secret returns
+      # AI-Safe Access Compliance Check
+      - name: AI-Safe Access Check - No plaintext secret returns
         run: |
           set -euo pipefail
           if grep -rn "secret_get\s*=" internal/mcp/ 2>/dev/null | grep -v "masked\|Masked"; then
@@ -60,7 +60,7 @@ jobs:
           fi
           echo "OK: No plaintext secret getters"
 
-      - name: Option D+ Check - Output sanitization
+      - name: AI-Safe Access Check - Output sanitization
         run: |
           set -euo pipefail
           if ! grep -rq "Sanitize\|sanitize\|REDACTED" internal/mcp/ 2>/dev/null; then

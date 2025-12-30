@@ -18,7 +18,7 @@ secretctl uses only Go standard library and `golang.org/x/crypto` for cryptograp
 - **Minimal dependencies** - Reduces supply chain attack surface
 - **Auditable codebase** - Easier security reviews
 
-### 2. Option D+ for AI Integration
+### 2. AI-Safe Access for AI Integration
 
 The cornerstone of secretctl's AI security model:
 
@@ -115,7 +115,7 @@ Go's garbage collector manages memory, making guaranteed zeroing difficult. This
 | HashiCorp Vault | Yes (experimental) | Yes (`read_secret`) | No (server required) | BSL |
 | Infisical | Yes | Yes (`get-secret`) | No (server required) | Yes |
 | 1Password | No (refuses MCP) | No (policy) | No (subscription) | No |
-| **secretctl** | **Yes** | **No (Option D+)** | **Yes** | **Yes** |
+| **secretctl** | **Yes** | **No (AI-Safe Access)** | **Yes** | **Yes** |
 
 **Unique Position**: secretctl is the only solution with MCP support + no plaintext to AI + fully local + open source.
 
@@ -127,7 +127,7 @@ secretctl follows the same principles that guide 1Password's approach to AI:
 |-----------|-----------|-----------|
 | Secrets stay secret | Zero-knowledge encryption | AES-256-GCM + Argon2id |
 | Deterministic authorization | LLMs don't make auth decisions | Policy engine controls access |
-| No raw credentials to LLMs | Don't include secrets in prompts | Option D+ prohibits plaintext |
+| No raw credentials to LLMs | Don't include secrets in prompts | AI-Safe Access prohibits plaintext |
 | Auditability | Record access and actions | Full audit logging |
 | Transparency | Disclose what AI sees | Only masked values returned |
 | Least privilege | Minimum necessary access | Policy-based key restrictions |

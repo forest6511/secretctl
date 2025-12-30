@@ -57,7 +57,7 @@ const FeatureList: FeatureItem[] = [
     description: (
       <>
         Built-in MCP server for secure AI agent integration. Use with Claude Code
-        and other AI tools while keeping your secrets safe with Option D+.
+        and other AI tools while keeping your secrets safe with AI-Safe Access.
       </>
     ),
   },

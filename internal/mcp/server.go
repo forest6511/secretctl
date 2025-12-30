@@ -1,5 +1,5 @@
 // Package mcp implements the MCP (Model Context Protocol) server for secretctl.
-// This implements the Option D+ design where AI agents never receive plaintext secrets.
+// This implements the "AI-Safe Access" design where AI agents never receive plaintext secrets.
 package mcp
 
 import (
@@ -139,7 +139,7 @@ func (s *Server) registerTools() {
 	// secret_get_field - Get a non-sensitive field value
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "secret_get_field",
-		Description: "Get a specific field value from a multi-field secret. Only non-sensitive fields can be retrieved (Option D+ policy). Sensitive fields will be rejected.",
+		Description: "Get a specific field value from a multi-field secret. Only non-sensitive fields can be retrieved (AI-Safe Access policy). Sensitive fields will be rejected.",
 	}, s.handleSecretGetField)
 
 	// secret_run_with_bindings - Execute command with binding-based environment variables

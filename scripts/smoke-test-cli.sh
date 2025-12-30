@@ -72,9 +72,9 @@ if ! echo "$LIST" | grep -q "test/smoke-key"; then
 fi
 echo "   PASS"
 
-# Test 6: Run command (Option D+ - env injection)
+# Test 6: Run command (AI-Safe Access - env injection)
 echo ""
-echo "6. Testing run command (Option D+)..."
+echo "6. Testing run command (AI-Safe Access)..."
 $BINARY set test/env-key "env-secret-456"
 if [[ "$(uname)" == "MINGW"* ]] || [[ "$(uname)" == "MSYS"* ]]; then
     # Windows

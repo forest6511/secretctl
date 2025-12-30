@@ -42,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Sensitive field values are always masked in MCP responses
 - Non-sensitive fields can be read via `secret_get_field` (e.g., username, host)
-- `field_count` stored in plaintext for efficient querying (Option D+ compliant)
+- `field_count` stored in plaintext for efficient querying (AI-Safe Access compliant)
 
 ## [0.6.0] - 2025-12-24
 
@@ -130,7 +130,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Policy-based command allowlisting via `~/.secretctl/mcp-policy.yaml`
 
 ### Security
-- **Option D+ design**: AI agents never receive plaintext secrets
+- **AI-Safe Access design**: AI agents never receive plaintext secrets
 - Default denied commands (env, printenv, set, export) always blocked
 - Output sanitization in secret_run prevents secret leakage
 - TOCTOU-safe policy file loading with symlink rejection

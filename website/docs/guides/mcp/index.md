@@ -10,7 +10,7 @@ secretctl includes a built-in MCP (Model Context Protocol) server for secure int
 
 ## Overview
 
-The MCP server enables AI assistants to work with your secrets **without ever seeing the actual secret values**. This is achieved through the [Option D+ security model](/docs/guides/mcp/security-model).
+The MCP server enables AI assistants to work with your secrets **without ever seeing the actual secret values**. This is achieved through the [AI-Safe Access security model](/docs/guides/mcp/security-model).
 
 ## Quick Start
 
@@ -59,7 +59,7 @@ See [Claude Code Setup](/docs/guides/mcp/claude-code-setup) for detailed configu
 
 ## Learn More
 
-- [Security Model (Option D+)](/docs/guides/mcp/security-model) - How secrets are protected
+- [Security Model (AI-Safe Access)](/docs/guides/mcp/security-model) - How secrets are protected
 - [Claude Code Setup](/docs/guides/mcp/claude-code-setup) - Detailed setup guide
 - [Available Tools](/docs/guides/mcp/available-tools) - MCP tools reference
 - [Environment Aliases](/docs/guides/mcp/env-aliases) - Multi-environment configuration

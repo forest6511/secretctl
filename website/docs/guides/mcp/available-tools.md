@@ -199,7 +199,7 @@ List all field names and metadata for a multi-field secret. Does **not** return 
 
 ## secret_get_field
 
-Get a specific field value from a multi-field secret. **Only non-sensitive fields can be retrieved** (Option D+ policy). Sensitive fields will be rejected.
+Get a specific field value from a multi-field secret. **Only non-sensitive fields can be retrieved** (AI-Safe Access policy). Sensitive fields will be rejected.
 
 **Input Schema:**
 
@@ -225,7 +225,7 @@ Get a specific field value from a multi-field secret. **Only non-sensitive field
 
 ```json
 {
-  "error": "field 'password' is marked as sensitive (Option D+ policy)"
+  "error": "field 'password' is marked as sensitive and cannot be retrieved via MCP (AI-Safe Access policy)"
 }
 ```
 

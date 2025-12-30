@@ -58,7 +58,7 @@ sidebar_position: 1
 ## Why secretctl?
 
 - **Local-first**: Your secrets never leave your machine
-- **AI-ready**: Built-in MCP server with Option D+ security (AI agents never see plaintext)
+- **AI-ready**: Built-in MCP server with AI-Safe Access (AI agents never see plaintext)
 - **Simple**: Single binary, no server required
 - **Secure**: AES-256-GCM encryption with Argon2id key derivation
 

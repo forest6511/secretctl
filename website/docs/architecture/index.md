@@ -20,7 +20,7 @@ This document describes the high-level architecture of secretctl, including comp
 │  │  (Cobra)    │   │   (Wails)   │   │   (stdio)   │                       │
 │  └──────┬──────┘   └──────┬──────┘   └──────┬──────┘                       │
 │         │                 │                 │                               │
-│         │    Full Trust   │    Full Trust   │   Restricted (Option D+)     │
+│         │    Full Trust   │    Full Trust   │   Restricted (AI-Safe Access)│
 │         │                 │                 │                               │
 │         └────────────────┼────────────────┘                               │
 │                          │                                                  │
@@ -60,7 +60,7 @@ This document describes the high-level architecture of secretctl, including comp
 |-----------|----------------|---------|
 | **CLI** | Command-line interface, user interaction | `cmd/secretctl` |
 | **Desktop** | Native GUI application | `desktop/` |
-| **MCP Server** | AI agent integration, Option D+ enforcement | `internal/mcp` |
+| **MCP Server** | AI agent integration, AI-Safe Access enforcement | `internal/mcp` |
 | **Vault Manager** | Lifecycle (init, lock, unlock), session management | `pkg/vault` |
 | **Secrets Store** | CRUD operations, metadata handling | `pkg/vault` |
 | **Audit Log** | HMAC-chained event logging, integrity verification | `pkg/vault` |
@@ -95,7 +95,7 @@ User                    CLI                     Vault                   Crypto
   │       OK             │                        │                       │
 ```
 
-### MCP secret_run Operation (Option D+)
+### MCP secret_run Operation (AI-Safe Access)
 
 ```
 AI Agent            MCP Server              Vault              Subprocess
@@ -147,7 +147,7 @@ AI Agent            MCP Server              Vault              Subprocess
 │  │                                                                         │ │
 │  └───────────────────────────────────────────────────────────────────────┘ │
 │                                    │                                        │
-│                                    │ Option D+ Boundary                     │
+│                                    │ AI-Safe Access Boundary                │
 │                                    ▼                                        │
 │  ┌───────────────────────────────────────────────────────────────────────┐ │
 │  │                                                                         │ │
@@ -192,7 +192,7 @@ AI Agent            MCP Server              Vault              Subprocess
 | **S**poofing | No | Local-only, no network auth |
 | **T**ampering | Yes | HMAC chain audit logs, encrypted storage |
 | **R**epudiation | Yes | Audit logging with timestamps |
-| **I**nformation Disclosure | Yes | Option D+, output sanitization |
+| **I**nformation Disclosure | Yes | AI-Safe Access, output sanitization |
 | **D**enial of Service | Limited | Timeout on commands (300s) |
 | **E**levation of Privilege | Yes | Trust boundary enforcement |
 

@@ -173,7 +173,7 @@ func (s *Server) handleSecretList(_ context.Context, _ *mcp.CallToolRequest, inp
 		}
 	default:
 		// List all secrets with metadata but WITHOUT decrypting values
-		// This follows Option D+ principle: minimize plaintext exposure
+		// This follows AI-Safe Access principle: minimize plaintext exposure
 		entries, err = s.vault.ListSecretsWithMetadata()
 		if err != nil {
 			_ = s.vault.Audit().LogError(audit.OpSecretList, audit.SourceMCP, "", "LIST_FAILED", err.Error())
@@ -489,7 +489,7 @@ func (s *Server) handleSecretListFields(_ context.Context, _ *mcp.CallToolReques
 }
 
 // handleSecretGetField handles the secret_get_field tool call.
-// Per Option D+: Only non-sensitive fields can be retrieved via MCP.
+// Per AI-Safe Access: Only non-sensitive fields can be retrieved via MCP.
 func (s *Server) handleSecretGetField(_ context.Context, _ *mcp.CallToolRequest, input SecretGetFieldInput) (*mcp.CallToolResult, SecretGetFieldOutput, error) {
 	if input.Key == "" {
 		_ = s.vault.Audit().LogError(audit.OpSecretGetField, audit.SourceMCP, "", "INVALID_INPUT", "key is required")
@@ -513,10 +513,10 @@ func (s *Server) handleSecretGetField(_ context.Context, _ *mcp.CallToolRequest,
 		return nil, SecretGetFieldOutput{}, fmt.Errorf("field '%s' not found in secret '%s'", input.Field, input.Key)
 	}
 
-	// Option D+ enforcement: Reject sensitive fields
+	// AI-Safe Access enforcement: Reject sensitive fields
 	if field.Sensitive {
 		_ = s.vault.Audit().LogDenied(audit.OpSecretGetFieldDenied, audit.SourceMCP, input.Key, fmt.Sprintf("sensitive field: %s", canonicalName))
-		return nil, SecretGetFieldOutput{}, fmt.Errorf("field '%s' is marked as sensitive and cannot be retrieved via MCP (Option D+ policy)", canonicalName)
+		return nil, SecretGetFieldOutput{}, fmt.Errorf("field '%s' is marked as sensitive and cannot be retrieved via MCP (AI-Safe Access policy)", canonicalName)
 	}
 
 	// Log successful get field operation

@@ -2,9 +2,9 @@
 
 ## Executive Summary
 
-This analysis examines how competing MCP servers handle database credentials, with focus on PostgreSQL implementations. The goal is to identify best practices for integrating secretctl with database MCP servers while maintaining Option D+ security principles.
+This analysis examines how competing MCP servers handle database credentials, with focus on PostgreSQL implementations. The goal is to identify best practices for integrating secretctl with database MCP servers while maintaining AI-Safe Access security principles.
 
-**Key Finding**: Most PostgreSQL MCP servers have significant security weaknesses. secretctl's Option D+ design can provide superior security through credential injection without AI exposure.
+**Key Finding**: Most PostgreSQL MCP servers have significant security weaknesses. secretctl's AI-Safe Access design can provide superior security through credential injection without AI exposure.
 
 ---
 
@@ -230,7 +230,7 @@ secretctl run -k "POSTGRES_*" -- npx @anthropic/postgres-mcp
 │  (credentials)  │──inject──▶   │  (operations)   │
 └─────────────────┘              └─────────────────┘
        │
-  Option D+
+  AI-Safe Access
   (AI never sees
    plaintext)
 ```
@@ -290,7 +290,7 @@ Potential features:
 
 ## Conclusion
 
-secretctl's Option D+ design aligns with industry best practices (1Password, HashiCorp Vault) for AI-era credential management. The key insight from competitive analysis:
+secretctl's AI-Safe Access design aligns with industry best practices (1Password, HashiCorp Vault) for AI-era credential management. The key insight from competitive analysis:
 
 > **Credentials should be injected on behalf of the agent, without handing them over.**
 
