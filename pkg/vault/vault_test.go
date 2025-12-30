@@ -2085,3 +2085,83 @@ func TestResolveFieldNameIntegration(t *testing.T) {
 		t.Errorf("expected ErrFieldNotFound, got %v", err)
 	}
 }
+
+// TestFieldCountInListSecretsWithMetadata verifies that field_count is correctly
+// populated for both legacy single-value and multi-field secrets in list operations.
+func TestFieldCountInListSecretsWithMetadata(t *testing.T) {
+	tmpDir := t.TempDir()
+	v := New(tmpDir)
+	password := "testpassword123"
+
+	if err := v.Init(password); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := v.Unlock(password); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+	defer v.Lock()
+
+	// Create a legacy single-value secret (field_count = 1)
+	if err := v.SetSecret("legacy/single", &SecretEntry{
+		Value: []byte("single-value"),
+	}); err != nil {
+		t.Fatalf("SetSecret (legacy) failed: %v", err)
+	}
+
+	// Create a multi-field secret (field_count = 3)
+	if err := v.SetSecret("db/prod", &SecretEntry{
+		Fields: map[string]Field{
+			"host":     {Value: "localhost"},
+			"username": {Value: "admin"},
+			"password": {Value: "secret", Sensitive: true},
+		},
+	}); err != nil {
+		t.Fatalf("SetSecret (multi-field) failed: %v", err)
+	}
+
+	// Create another multi-field secret (field_count = 5)
+	if err := v.SetSecret("db/staging", &SecretEntry{
+		Fields: map[string]Field{
+			"host":     {Value: "staging.example.com"},
+			"port":     {Value: "5432"},
+			"username": {Value: "staging_user"},
+			"password": {Value: "staging_secret", Sensitive: true},
+			"database": {Value: "staging_db"},
+		},
+	}); err != nil {
+		t.Fatalf("SetSecret (5-field) failed: %v", err)
+	}
+
+	// List secrets with metadata (no value decryption)
+	entries, err := v.ListSecretsWithMetadata()
+	if err != nil {
+		t.Fatalf("ListSecretsWithMetadata failed: %v", err)
+	}
+
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(entries))
+	}
+
+	// Find and verify each entry's field_count
+	fieldCounts := make(map[string]int)
+	for _, entry := range entries {
+		fieldCounts[entry.Key] = entry.FieldCount
+	}
+
+	expectedCounts := map[string]int{
+		"legacy/single": 1, // Legacy single-value
+		"db/prod":       3, // 3 fields
+		"db/staging":    5, // 5 fields
+	}
+
+	for key, want := range expectedCounts {
+		got, ok := fieldCounts[key]
+		if !ok {
+			t.Errorf("missing entry for key %q", key)
+			continue
+		}
+		if got != want {
+			t.Errorf("key %q: field_count = %d, want %d", key, got, want)
+		}
+	}
+}

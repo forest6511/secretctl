@@ -263,16 +263,17 @@ type SecretMetadata struct {
 // - Legacy secrets are auto-converted to Fields["value"] on read
 // - SetSecret uses Fields; Value is ignored if Fields is set
 type SecretEntry struct {
-	Key       string            // Secret key name
-	Value     []byte            // Deprecated: use Fields instead. Kept for backward compatibility.
-	Fields    map[string]Field  // Multi-field values (Phase 2.5+)
-	Bindings  map[string]string // Environment variable bindings: env_var_name -> field_name
-	Schema    string            // Reserved for Phase 3 schema validation
-	Metadata  *SecretMetadata   // Encrypted metadata (notes, url)
-	Tags      []string          // Plaintext: searchable tags
-	ExpiresAt *time.Time        // Plaintext: expiration date
-	CreatedAt time.Time         // Creation timestamp
-	UpdatedAt time.Time         // Last update timestamp
+	Key        string            // Secret key name
+	Value      []byte            // Deprecated: use Fields instead. Kept for backward compatibility.
+	Fields     map[string]Field  // Multi-field values (Phase 2.5+)
+	Bindings   map[string]string // Environment variable bindings: env_var_name -> field_name
+	Schema     string            // Reserved for Phase 3 schema validation
+	Metadata   *SecretMetadata   // Encrypted metadata (notes, url)
+	Tags       []string          // Plaintext: searchable tags
+	ExpiresAt  *time.Time        // Plaintext: expiration date
+	FieldCount int               // Number of fields (plaintext for MCP secret_list)
+	CreatedAt  time.Time         // Creation timestamp
+	UpdatedAt  time.Time         // Last update timestamp
 }
 
 // Vault manages the entire secret storage
@@ -652,6 +653,7 @@ func (v *Vault) createTables(db *sql.DB) error {
 	// - encrypted_bindings: encrypted JSON map of env var bindings (Phase 2.5+)
 	// - encrypted_metadata: encrypted notes/url JSON
 	// - schema: plaintext schema name (reserved for Phase 3)
+	// - field_count: plaintext field count for MCP secret_list (Phase 2.5+)
 	// - tags, expires_at: plaintext for searchability
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS secrets (
@@ -663,6 +665,7 @@ func (v *Vault) createTables(db *sql.DB) error {
 			encrypted_bindings BLOB,
 			encrypted_metadata BLOB,
 			schema TEXT,
+			field_count INTEGER DEFAULT 1,
 			tags TEXT,
 			expires_at TIMESTAMP,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -984,6 +987,14 @@ func (v *Vault) SetSecret(key string, entry *SecretEntry) error {
 		expiresAt = sql.NullTime{Time: *entry.ExpiresAt, Valid: true}
 	}
 
+	// Calculate field count for MCP secret_list (plaintext, not sensitive)
+	fieldCount := 1 // Default for legacy single-value secrets
+	if len(entry.Fields) > 0 {
+		fieldCount = len(entry.Fields)
+	} else if len(entry.Value) == 0 {
+		fieldCount = 0
+	}
+
 	// Begin transaction
 	tx, err := v.db.Begin()
 	if err != nil {
@@ -994,8 +1005,8 @@ func (v *Vault) SetSecret(key string, entry *SecretEntry) error {
 	// UPSERT: update if key exists, insert otherwise
 	// Store both legacy format (encrypted_value) and new format (encrypted_fields)
 	_, err = tx.Exec(`
-		INSERT INTO secrets (key_hash, encrypted_key, encrypted_value, encrypted_fields, encrypted_bindings, encrypted_metadata, schema, tags, expires_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		INSERT INTO secrets (key_hash, encrypted_key, encrypted_value, encrypted_fields, encrypted_bindings, encrypted_metadata, schema, field_count, tags, expires_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(key_hash) DO UPDATE SET
 			encrypted_key = excluded.encrypted_key,
 			encrypted_value = excluded.encrypted_value,
@@ -1003,10 +1014,11 @@ func (v *Vault) SetSecret(key string, entry *SecretEntry) error {
 			encrypted_bindings = excluded.encrypted_bindings,
 			encrypted_metadata = excluded.encrypted_metadata,
 			schema = excluded.schema,
+			field_count = excluded.field_count,
 			tags = excluded.tags,
 			expires_at = excluded.expires_at,
 			updated_at = CURRENT_TIMESTAMP
-	`, keyHash, encryptedKey, encryptedValue, encryptedFields, encryptedBindings, encryptedMetadata, entry.Schema, tagsStr, expiresAt)
+	`, keyHash, encryptedKey, encryptedValue, encryptedFields, encryptedBindings, encryptedMetadata, entry.Schema, fieldCount, tagsStr, expiresAt)
 	if err != nil {
 		_ = v.audit.LogError(audit.OpSecretSet, audit.SourceCLI, key, "DB_ERROR", err.Error())
 		return fmt.Errorf("vault: failed to save secret: %w", err)
@@ -1244,11 +1256,12 @@ func (v *Vault) scanSecretEntryRowWithMetadata(rows *sql.Rows) (*SecretEntry, er
 	var encryptedKey []byte
 	var encryptedMetadata []byte
 	var schema sql.NullString
+	var fieldCount sql.NullInt64
 	var tagsStr sql.NullString
 	var expiresAt sql.NullTime
 	var createdAt, updatedAt time.Time
 
-	if err := rows.Scan(&encryptedKey, &encryptedMetadata, &schema, &tagsStr, &expiresAt,
+	if err := rows.Scan(&encryptedKey, &encryptedMetadata, &schema, &fieldCount, &tagsStr, &expiresAt,
 		&createdAt, &updatedAt); err != nil {
 		return nil, fmt.Errorf("vault: failed to scan row: %w", err)
 	}
@@ -1260,9 +1273,15 @@ func (v *Vault) scanSecretEntryRowWithMetadata(rows *sql.Rows) (*SecretEntry, er
 	}
 
 	entry := &SecretEntry{
-		Key:       string(keyBytes),
-		CreatedAt: createdAt,
-		UpdatedAt: updatedAt,
+		Key:        string(keyBytes),
+		FieldCount: 1, // Default for legacy secrets
+		CreatedAt:  createdAt,
+		UpdatedAt:  updatedAt,
+	}
+
+	// Set field count if present (Phase 2.5+)
+	if fieldCount.Valid {
+		entry.FieldCount = int(fieldCount.Int64)
 	}
 
 	// Set schema if present
@@ -1312,7 +1331,7 @@ func (v *Vault) ListSecretsWithMetadata() ([]*SecretEntry, error) {
 	}
 
 	rows, err := v.db.Query(`
-		SELECT encrypted_key, encrypted_metadata, schema, tags, expires_at, created_at, updated_at
+		SELECT encrypted_key, encrypted_metadata, schema, field_count, tags, expires_at, created_at, updated_at
 		FROM secrets
 		ORDER BY created_at`)
 	if err != nil {
@@ -1350,7 +1369,7 @@ func (v *Vault) ListSecretsByTag(tag string) ([]*SecretEntry, error) {
 	// This searches for the tag within the JSON array string
 	// Include encrypted_metadata and schema for HasNotes/HasURL support and Phase 3
 	rows, err := v.db.Query(`
-		SELECT encrypted_key, encrypted_metadata, schema, tags, expires_at, created_at, updated_at
+		SELECT encrypted_key, encrypted_metadata, schema, field_count, tags, expires_at, created_at, updated_at
 		FROM secrets
 		WHERE tags LIKE ?
 		ORDER BY created_at`,
@@ -1396,7 +1415,7 @@ func (v *Vault) ListExpiringSecrets(within time.Duration) ([]*SecretEntry, error
 
 	// Include encrypted_metadata and schema for HasNotes/HasURL support and Phase 3
 	rows, err := v.db.Query(`
-		SELECT encrypted_key, encrypted_metadata, schema, tags, expires_at, created_at, updated_at
+		SELECT encrypted_key, encrypted_metadata, schema, field_count, tags, expires_at, created_at, updated_at
 		FROM secrets
 		WHERE expires_at IS NOT NULL AND expires_at <= ?
 		ORDER BY expires_at`,
