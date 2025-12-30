@@ -9,6 +9,8 @@ No infrastructure. No subscription. No complexity.
 [![Documentation](https://img.shields.io/badge/docs-website-blue)](https://forest6511.github.io/secretctl/)
 [![Codecov](https://codecov.io/gh/forest6511/secretctl/branch/main/graph/badge.svg)](https://codecov.io/gh/forest6511/secretctl)
 
+![secretctl demo](docs/assets/demo.gif)
+
 ---
 
 ## Why secretctl?
@@ -26,6 +28,14 @@ secretctl init
 secretctl set API_KEY
 secretctl get API_KEY
 ```
+
+### Why Local-First & AI-Safe?
+
+1. **Your secrets, your machine** — No cloud sync, no third-party servers, no subscription fees. Your credentials stay on your device, period.
+
+2. **AI agents don't need plaintext** — When Claude runs `aws s3 ls`, it needs the *result*, not your AWS keys. secretctl injects credentials directly into commands—AI never sees them.
+
+3. **Defense in depth** — AES-256-GCM encryption at rest, Argon2id key derivation, MCP policy controls, and automatic output sanitization. Multiple layers, not a single point of failure.
 
 ## Installation
 
