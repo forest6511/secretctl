@@ -75,6 +75,7 @@ const sidebars: SidebarsConfig = {
         'reference/cli-commands',
         'reference/mcp-tools',
         'reference/configuration',
+        'reference/field-names',
       ],
     },
     {
