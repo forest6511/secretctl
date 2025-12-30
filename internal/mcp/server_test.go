@@ -579,9 +579,9 @@ func TestHandleSecretGetMasked_MaskingBoundaries(t *testing.T) {
 
 	// Test masking boundary cases with multi-field secret
 	fields := map[string]vault.Field{
-		"short":  {Value: "1234", Sensitive: true},        // 4 chars -> all asterisks
-		"medium": {Value: "12345678", Sensitive: true},    // 8 chars -> last 2 visible
-		"long":   {Value: "123456789", Sensitive: true},   // 9 chars -> last 4 visible
+		"short":  {Value: "1234", Sensitive: true},      // 4 chars -> all asterisks
+		"medium": {Value: "12345678", Sensitive: true},  // 8 chars -> last 2 visible
+		"long":   {Value: "123456789", Sensitive: true}, // 9 chars -> last 4 visible
 	}
 	addTestSecretMultiField(t, v, "test/boundaries", fields)
 
