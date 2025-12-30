@@ -9,6 +9,8 @@ No infrastructure. No subscription. No complexity.
 [![Documentation](https://img.shields.io/badge/docs-website-blue)](https://forest6511.github.io/secretctl/)
 [![Codecov](https://codecov.io/gh/forest6511/secretctl/branch/main/graph/badge.svg)](https://codecov.io/gh/forest6511/secretctl)
 
+![secretctl demo](docs/assets/demo.gif)
+
 ---
 
 ## Why secretctl?
