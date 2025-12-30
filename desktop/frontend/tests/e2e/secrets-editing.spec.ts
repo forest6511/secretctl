@@ -458,8 +458,9 @@ test.describe('Secret Multi-field Editing', () => {
       await fieldNameInput.focus()
       await page.waitForTimeout(500)
 
-      // Press Escape - dialog should close
-      await page.keyboard.press('Escape')
+      // Press Escape using locator.press() - recommended for headless mode
+      // See: https://github.com/microsoft/playwright/issues/2025
+      await fieldNameInput.press('Escape')
       await expect(page.getByTestId('add-field-dialog')).not.toBeVisible({ timeout: 5000 })
     })
   })
