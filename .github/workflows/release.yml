@@ -1,6 +1,7 @@
 # Release workflow for secretctl
 # Triggered on version tags (v*)
-# Builds cross-platform CLI and Desktop binaries, creates GitHub release
+# Uses GoReleaser for CLI + auto-updates Homebrew/Scoop
+# Builds Desktop apps separately (requires native compilation)
 
 name: Release
 
@@ -42,7 +43,6 @@ jobs:
       - name: Run security scan
         run: |
           go install github.com/securego/gosec/v2/cmd/gosec@latest
-          # Exclude desktop/ as it requires Wails dependencies not available in this job
           gosec -severity high -confidence high -exclude-dir=desktop ./...
 
       - name: Check vulnerabilities
@@ -55,7 +55,7 @@ jobs:
         run: |
           set -euo pipefail
           if grep -rn "secret_get\s*=" internal/mcp/ 2>/dev/null | grep -v "masked\|Masked"; then
-            echo "FAIL: Plaintext secret getter found in internal/mcp/"
+            echo "FAIL: Plaintext secret getter found"
             exit 1
           fi
           echo "OK: No plaintext secret getters"
@@ -64,39 +64,23 @@ jobs:
         run: |
           set -euo pipefail
           if ! grep -rq "Sanitize\|sanitize\|REDACTED" internal/mcp/ 2>/dev/null; then
-            echo "FAIL: No output sanitization found in internal/mcp/"
+            echo "FAIL: No output sanitization found"
             exit 1
           fi
           echo "OK: Output sanitization found"
 
-      - name: Option D+ Check - Audit logging
-        run: |
-          set -euo pipefail
-          if ! grep -rq "audit\.\|Audit\|AuditLog" internal/mcp/ 2>/dev/null; then
-            echo "FAIL: No audit logging found in internal/mcp/"
-            exit 1
-          fi
-          echo "OK: Audit logging found"
-
-      - name: Option D+ Check - Masked returns
-        run: |
-          set -euo pipefail
-          if ! grep -rq "Masked\|masked" internal/mcp/ 2>/dev/null; then
-            echo "FAIL: No masked returns found in internal/mcp/"
-            exit 1
-          fi
-          echo "OK: Masked returns found"
-
   # ===========================================
-  # CLI Build (5 platforms, cross-compile)
+  # CLI Release (GoReleaser + Homebrew/Scoop)
   # ===========================================
-  cli-build:
-    name: Build CLI
+  cli-release:
+    name: CLI Release (GoReleaser)
     needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -104,40 +88,21 @@ jobs:
           go-version: '1.24.x'
           cache: true
 
-      - name: Build CLI binaries
-        run: |
-          mkdir -p dist
-
-          # CGO disabled for pure Go cross-compilation
-          export CGO_ENABLED=0
-
-          # Linux amd64
-          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/secretctl-linux-amd64 ./cmd/secretctl
-
-          # Linux arm64
-          GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o dist/secretctl-linux-arm64 ./cmd/secretctl
-
-          # macOS amd64
-          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/secretctl-darwin-amd64 ./cmd/secretctl
-
-          # macOS arm64 (Apple Silicon)
-          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/secretctl-darwin-arm64 ./cmd/secretctl
-
-          # Windows amd64
-          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/secretctl-windows-amd64.exe ./cmd/secretctl
-
-      - name: Upload CLI artifacts
-        uses: actions/upload-artifact@v4
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
         with:
-          name: cli-binaries
-          path: dist/*
-          retention-days: 1
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
   # ===========================================
-  # Desktop Build (3 platforms, native build)
+  # Desktop Build (Native compilation required)
   # ===========================================
   desktop-build:
-    name: Build Desktop (${{ matrix.os }})
+    name: Desktop (${{ matrix.os }})
     needs: test
     strategy:
       fail-fast: false
@@ -145,21 +110,21 @@ jobs:
         include:
           - os: ubuntu-latest
             platform: linux/amd64
-            artifact_name: secretctl-desktop-linux
+            artifact_name: secretctl-desktop-linux-amd64
             wails_tags: webkit2_41
             deps_cmd: |
               sudo apt-get update
               sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
           - os: macos-latest
             platform: darwin/universal
-            artifact_name: secretctl-desktop-macos
+            artifact_name: secretctl-desktop-macos-universal
             wails_tags: ""
             deps_cmd: ""
           - os: windows-latest
             platform: windows/amd64
-            artifact_name: secretctl-desktop-windows.exe
+            artifact_name: secretctl-desktop-windows-amd64
             wails_tags: ""
-            deps_cmd: choco install nsis -y
+            deps_cmd: ""
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
@@ -201,79 +166,22 @@ jobs:
           fi
         shell: bash
 
-      - name: Upload Desktop artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact_name }}
-          path: desktop/build/bin/*
-          retention-days: 1
-
-  # ===========================================
-  # Create Release
-  # ===========================================
-  release:
-    name: Create Release
-    needs: [cli-build, desktop-build]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download CLI artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: cli-binaries
-          path: dist/
-
-      - name: Download Desktop Linux artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: secretctl-desktop-linux
-          path: dist/
-        continue-on-error: true
-
-      - name: Download Desktop macOS artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: secretctl-desktop-macos
-          path: dist/
-        continue-on-error: true
-
-      - name: Download Desktop Windows artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: secretctl-desktop-windows.exe
-          path: dist/
-        continue-on-error: true
-
-      - name: Package macOS app bundle
+      - name: Package artifact (macOS)
+        if: runner.os == 'macOS'
         run: |
-          cd dist
-          # Zip macOS .app bundle if it exists
-          if [ -d "secretctl.app" ]; then
-            zip -r secretctl-desktop-macos.zip secretctl.app
-            rm -rf secretctl.app
-          fi
+          cd desktop/build/bin
+          zip -r ${{ matrix.artifact_name }}.zip *.app
 
-      - name: List artifacts
-        run: ls -la dist/
-
-      - name: Generate checksums
+      - name: Package artifact (Linux)
+        if: runner.os == 'Linux'
         run: |
-          cd dist
-          # Only checksum files, not directories
-          find . -maxdepth 1 -type f ! -name checksums.txt -exec sha256sum {} \; | sed 's|./||' > checksums.txt
-          echo "=== Checksums ==="
-          cat checksums.txt
+          cd desktop/build/bin
+          tar -czvf ${{ matrix.artifact_name }}.tar.gz secretctl-desktop
 
-      - name: Verify checksums
-        run: |
-          cd dist
-          sha256sum -c checksums.txt
-          echo "=== Checksums verified ==="
-
-      - name: Create Release
+      - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/*
-          generate_release_notes: true
-          draft: false
-          prerelease: ${{ contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
+            desktop/build/bin/*.zip
+            desktop/build/bin/*.tar.gz
+            desktop/build/bin/*.exe

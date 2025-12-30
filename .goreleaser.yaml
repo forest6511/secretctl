@@ -34,8 +34,50 @@ builds:
 archives:
   - id: cli-archives
     formats:
-      - binary
-    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+      - tar.gz
+      - zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+
+# ===========================================
+# Homebrew Tap (macOS/Linux)
+# ===========================================
+brews:
+  - name: secretctl
+    ids:
+      - secretctl
+    repository:
+      owner: forest6511
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/forest6511/secretctl"
+    description: "The simplest AI-ready secrets manager"
+    license: "MIT"
+    install: |
+      bin.install "secretctl"
+    test: |
+      system "#{bin}/secretctl", "version"
+
+# ===========================================
+# Scoop Bucket (Windows)
+# ===========================================
+scoops:
+  - name: secretctl
+    ids:
+      - secretctl
+    repository:
+      owner: forest6511
+      name: scoop-bucket
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: "https://github.com/forest6511/secretctl"
+    description: "The simplest AI-ready secrets manager"
+    license: MIT
 
 checksum:
   name_template: 'checksums.txt'
@@ -79,24 +121,55 @@ release:
 
     ### Installation
 
+    #### macOS / Linux (Homebrew) - Recommended
     ```bash
-    # macOS (Apple Silicon)
-    curl -LO https://github.com/forest6511/secretctl/releases/download/{{ .Tag }}/secretctl-darwin-arm64
-    chmod +x secretctl-darwin-arm64
-    sudo mv secretctl-darwin-arm64 /usr/local/bin/secretctl
-
-    # macOS (Intel)
-    curl -LO https://github.com/forest6511/secretctl/releases/download/{{ .Tag }}/secretctl-darwin-amd64
-    chmod +x secretctl-darwin-amd64
-    sudo mv secretctl-darwin-amd64 /usr/local/bin/secretctl
-
-    # Linux (x86_64)
-    curl -LO https://github.com/forest6511/secretctl/releases/download/{{ .Tag }}/secretctl-linux-amd64
-    chmod +x secretctl-linux-amd64
-    sudo mv secretctl-linux-amd64 /usr/local/bin/secretctl
+    brew install forest6511/tap/secretctl
     ```
 
-    ### Verify Download
+    #### Windows (Scoop)
+    ```powershell
+    scoop bucket add secretctl https://github.com/forest6511/scoop-bucket
+    scoop install secretctl
+    ```
+
+    #### Manual Installation
+
+    **macOS (Apple Silicon)**
+    ```bash
+    curl -LO https://github.com/forest6511/secretctl/releases/download/{{ .Tag }}/secretctl_{{ .Version }}_darwin_arm64.tar.gz
+    tar xzf secretctl_{{ .Version }}_darwin_arm64.tar.gz
+    sudo mv secretctl /usr/local/bin/
+    ```
+
+    **macOS (Intel)**
+    ```bash
+    curl -LO https://github.com/forest6511/secretctl/releases/download/{{ .Tag }}/secretctl_{{ .Version }}_darwin_amd64.tar.gz
+    tar xzf secretctl_{{ .Version }}_darwin_amd64.tar.gz
+    sudo mv secretctl /usr/local/bin/
+    ```
+
+    **Linux (x86_64)**
+    ```bash
+    curl -LO https://github.com/forest6511/secretctl/releases/download/{{ .Tag }}/secretctl_{{ .Version }}_linux_amd64.tar.gz
+    tar xzf secretctl_{{ .Version }}_linux_amd64.tar.gz
+    sudo mv secretctl /usr/local/bin/
+    ```
+
+    **Windows**
+    ```powershell
+    # Download and extract
+    Invoke-WebRequest -Uri "https://github.com/forest6511/secretctl/releases/download/{{ .Tag }}/secretctl_{{ .Version }}_windows_amd64.zip" -OutFile secretctl.zip
+    Expand-Archive secretctl.zip -DestinationPath .
+    # Move to PATH or run directly
+    ```
+
+    ### Verify Installation
+
+    ```bash
+    secretctl version
+    ```
+
+    ### Verify Download (checksums)
 
     ```bash
     curl -LO https://github.com/forest6511/secretctl/releases/download/{{ .Tag }}/checksums.txt

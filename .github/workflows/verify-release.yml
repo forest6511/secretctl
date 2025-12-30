@@ -1,0 +1,136 @@
+# Verify Release workflow
+# Runs after release to ensure all platform downloads work correctly
+# Can also be triggered manually for testing
+
+name: Verify Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to verify (e.g., v0.8.0)'
+        required: true
+        type: string
+
+jobs:
+  # ===========================================
+  # Verify CLI Downloads
+  # ===========================================
+  verify-cli:
+    name: Verify CLI (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: secretctl_*_linux_amd64.tar.gz
+            extract: tar xzf
+            binary: ./secretctl
+          - os: macos-latest
+            asset: secretctl_*_darwin_arm64.tar.gz
+            extract: tar xzf
+            binary: ./secretctl
+          - os: windows-latest
+            asset: secretctl_*_windows_amd64.zip
+            extract: unzip
+            binary: ./secretctl.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Determine tag
+        id: tag
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            echo "tag=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
+      - name: Download release asset
+        run: |
+          gh release download ${{ steps.tag.outputs.tag }} \
+            --repo forest6511/secretctl \
+            --pattern "${{ matrix.asset }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Extract and verify
+        run: |
+          ${{ matrix.extract }} ${{ matrix.asset }}
+          ${{ matrix.binary }} version
+        shell: bash
+
+      - name: Verify checksum
+        run: |
+          gh release download ${{ steps.tag.outputs.tag }} \
+            --repo forest6511/secretctl \
+            --pattern "checksums.txt"
+          if command -v sha256sum &> /dev/null; then
+            sha256sum -c checksums.txt --ignore-missing
+          elif command -v shasum &> /dev/null; then
+            shasum -a 256 -c checksums.txt --ignore-missing
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+
+  # ===========================================
+  # Verify Homebrew (macOS/Linux)
+  # ===========================================
+  verify-homebrew:
+    name: Verify Homebrew
+    runs-on: macos-latest
+    needs: verify-cli
+    steps:
+      - name: Install via Homebrew
+        run: |
+          brew install forest6511/tap/secretctl
+          secretctl version
+
+  # ===========================================
+  # Verify Scoop (Windows)
+  # ===========================================
+  verify-scoop:
+    name: Verify Scoop
+    runs-on: windows-latest
+    needs: verify-cli
+    steps:
+      - name: Install Scoop
+        run: |
+          Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+          iwr -useb get.scoop.sh | iex
+        shell: pwsh
+
+      - name: Install via Scoop
+        run: |
+          scoop bucket add secretctl https://github.com/forest6511/scoop-bucket
+          scoop install secretctl
+          secretctl version
+        shell: pwsh
+
+  # ===========================================
+  # Summary
+  # ===========================================
+  summary:
+    name: Release Verification Summary
+    needs: [verify-cli, verify-homebrew, verify-scoop]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check results
+        run: |
+          echo "=== Release Verification Summary ==="
+          echo "CLI Downloads: ${{ needs.verify-cli.result }}"
+          echo "Homebrew: ${{ needs.verify-homebrew.result }}"
+          echo "Scoop: ${{ needs.verify-scoop.result }}"
+
+          if [ "${{ needs.verify-cli.result }}" != "success" ] || \
+             [ "${{ needs.verify-homebrew.result }}" != "success" ] || \
+             [ "${{ needs.verify-scoop.result }}" != "success" ]; then
+            echo "::error::Some verification steps failed!"
+            exit 1
+          fi
+
+          echo "✅ All platforms verified successfully!"
