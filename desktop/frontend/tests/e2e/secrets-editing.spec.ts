@@ -61,7 +61,7 @@ async function createTestSecret(page: Page, key: string) {
   await expect(page.getByTestId(`secret-item-${key}`)).toBeVisible({ timeout: 5000 })
 }
 
-test.describe.skip('Secret Multi-field Editing', () => {
+test.describe('Secret Multi-field Editing', () => {
   test.beforeEach(async ({ page }) => {
     await ensureAuthenticated(page)
   })
