@@ -233,25 +233,51 @@ Get a masked version of a secret value (e.g., `****WXYZ`). Useful for verifying 
 {
   "key": "string",
   "masked_value": "string",
-  "value_length": "integer"
+  "value_length": "integer",
+  "field_count": "integer",
+  "fields": {
+    "field_name": {
+      "value": "string",
+      "sensitive": "boolean",
+      "value_length": "integer"
+    }
+  }
 }
 ```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `key` | string | The secret key |
+| `masked_value` | string | Masked primary value (single-value secrets only; empty for multi-field) |
+| `value_length` | integer | Length of the primary value (single-value secrets only; 0 for multi-field) |
+| `field_count` | integer | Number of fields in this secret |
+| `fields` | object | Map of field names to masked field info (multi-field secrets only) |
+
+> **Note**: For multi-field secrets, `masked_value` and `value_length` are empty/0.
+> Use the `fields` map to access individual field values.
 
 ### Masking Behavior
 
 The masking algorithm:
-- Shows the last 4 characters of the secret
-- Replaces all preceding characters with `*`
-- For secrets shorter than 8 characters, shows only asterisks
+- Shows the last 4 characters for secrets 9+ characters
+- Shows the last 2 characters for secrets 5-8 characters
+- Shows only asterisks for secrets 1-4 characters
+- Non-sensitive fields are shown in full (not masked)
 
 | Secret Length | Masked Output |
 |--------------|---------------|
-| 1-7 chars | `*******` (all asterisks) |
-| 8+ chars | `****WXYZ` (last 4 visible) |
+| 1-4 chars | `****` (all asterisks) |
+| 5-8 chars | `******YZ` (last 2 visible) |
+| 9+ chars | `*****WXYZ` (last 4 visible) |
+
+**Multi-field secrets:**
+- `fields` map contains all fields with their masked/full values
+- Sensitive fields are masked according to the algorithm above
+- Non-sensitive fields show the complete value
 
 ### Examples
 
-**Get masked value:**
+**Get masked value (single-field secret):**
 
 ```json
 // Input
@@ -262,8 +288,9 @@ The masking algorithm:
 // Output (assuming API_KEY = "sk-abc123xyz789")
 {
   "key": "API_KEY",
-  "masked_value": "*********789",
-  "value_length": 14
+  "masked_value": "**********z789",
+  "value_length": 14,
+  "field_count": 1
 }
 ```
 
@@ -279,7 +306,42 @@ The masking algorithm:
 {
   "key": "PIN",
   "masked_value": "****",
-  "value_length": 4
+  "value_length": 4,
+  "field_count": 1
+}
+```
+
+**Multi-field secret (e.g., database credential):**
+
+```json
+// Input
+{
+  "key": "db/postgres"
+}
+
+// Output (multi-field secret with username, password, host)
+{
+  "key": "db/postgres",
+  "masked_value": "",
+  "value_length": 0,
+  "field_count": 3,
+  "fields": {
+    "username": {
+      "value": "dbadmin",
+      "sensitive": false,
+      "value_length": 7
+    },
+    "password": {
+      "value": "***********5678",
+      "sensitive": true,
+      "value_length": 16
+    },
+    "host": {
+      "value": "db.example.com",
+      "sensitive": false,
+      "value_length": 14
+    }
+  }
 }
 ```
 
