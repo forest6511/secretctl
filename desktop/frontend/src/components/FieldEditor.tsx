@@ -87,10 +87,12 @@ export function FieldEditor({
   const isTextarea = field.inputType === 'textarea'
 
   // Security: For sensitive fields, mask value until visible
-  // For textarea: Must show masked value when hidden (no type="password" equivalent)
-  // For input: type="password" handles masking natively
+  // - Textarea: Must show masked value when hidden (no type="password" equivalent)
+  // - Input in read mode: Show masked value (type="password" only works for visual masking in edit mode)
+  // - Input in edit mode: type="password" handles visual masking, actual value preserved for editing
   const shouldMaskTextarea = isTextarea && field.sensitive && !isVisible
-  const displayValue = shouldMaskTextarea
+  const shouldMaskInput = !isTextarea && field.sensitive && !isVisible && readOnly
+  const displayValue = (shouldMaskTextarea || shouldMaskInput)
     ? '••••••••'
     : field.value
 
