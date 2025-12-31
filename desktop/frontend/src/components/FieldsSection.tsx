@@ -1,6 +1,6 @@
-import { FieldEditor, FieldDTO } from './FieldEditor'
+import { FieldEditor, FieldDTO, InputType } from './FieldEditor'
 
-export type { FieldDTO }
+export type { FieldDTO, InputType }
 
 interface FieldsSectionProps {
   secretKey: string

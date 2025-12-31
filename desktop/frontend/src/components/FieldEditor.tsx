@@ -2,14 +2,19 @@ import { useState } from 'react'
 import { Copy, Eye, EyeOff, Lock, Unlock, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { ViewSensitiveField, CopyFieldValue } from '../../wailsjs/go/main/App'
 import { useToast } from '@/hooks/useToast'
+
+// InputType for UI rendering per ADR-005
+export type InputType = 'text' | 'textarea'
 
 export interface FieldDTO {
   value: string
   sensitive: boolean
   aliases?: string[]
   kind?: string
+  inputType?: InputType // "text" (default) | "textarea" per ADR-005
   hint?: string
 }
 
@@ -72,14 +77,20 @@ export function FieldEditor({
     }
   }
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (onChange) {
       onChange(e.target.value)
     }
   }
 
-  // In edit mode, show actual value; in read mode with sensitive field, mask it
-  const displayValue = readOnly && field.sensitive && !isVisible
+  // Determine if this field should use textarea per ADR-005
+  const isTextarea = field.inputType === 'textarea'
+
+  // Security: For sensitive fields, mask value until visible
+  // For textarea: Must show masked value when hidden (no type="password" equivalent)
+  // For input: type="password" handles masking natively
+  const shouldMaskTextarea = isTextarea && field.sensitive && !isVisible
+  const displayValue = shouldMaskTextarea
     ? '••••••••'
     : field.value
 
@@ -110,15 +121,26 @@ export function FieldEditor({
           </Button>
         )}
       </div>
-      <div className="flex items-center gap-2">
-        <Input
-          type={field.sensitive && !isVisible ? 'password' : 'text'}
-          value={displayValue}
-          readOnly={readOnly}
-          onChange={handleChange}
-          className="font-mono"
-          data-testid={`field-value-${fieldName}`}
-        />
+      <div className={`flex ${isTextarea ? 'items-start' : 'items-center'} gap-2`}>
+        {isTextarea ? (
+          <Textarea
+            value={displayValue}
+            readOnly={readOnly || shouldMaskTextarea}
+            onChange={handleChange}
+            className="font-mono min-h-[120px] whitespace-pre-wrap"
+            placeholder={shouldMaskTextarea ? 'Click show to view/edit' : undefined}
+            data-testid={`field-value-${fieldName}`}
+          />
+        ) : (
+          <Input
+            type={field.sensitive && !isVisible ? 'password' : 'text'}
+            value={displayValue}
+            readOnly={readOnly}
+            onChange={handleChange}
+            className="font-mono"
+            data-testid={`field-value-${fieldName}`}
+          />
+        )}
         {field.sensitive && (
           <Button
             variant="ghost"

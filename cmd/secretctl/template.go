@@ -17,6 +17,7 @@ type TemplateField struct {
 	Sensitive bool
 	Required  bool
 	Kind      string
+	InputType string // "text" (default) | "textarea" per ADR-005
 }
 
 // BuiltinTemplates contains the predefined secret templates.
@@ -56,7 +57,7 @@ var BuiltinTemplates = map[string]SecretTemplate{
 			{Name: "host", Prompt: "Host", Sensitive: false, Required: true, Kind: "hostname"},
 			{Name: "port", Prompt: "Port (default: 22)", Sensitive: false, Required: false, Kind: "port"},
 			{Name: "username", Prompt: "Username", Sensitive: false, Required: true},
-			{Name: "private_key", Prompt: "Private Key (paste, then Ctrl+D)", Sensitive: true, Required: true},
+			{Name: "private_key", Prompt: "Private Key (paste, then Ctrl+D)", Sensitive: true, Required: true, InputType: "textarea"},
 		},
 	},
 }
@@ -75,6 +76,7 @@ func TemplateToFields(template SecretTemplate, values map[string]string) map[str
 			Value:     value,
 			Sensitive: tf.Sensitive,
 			Kind:      tf.Kind,
+			InputType: tf.InputType,
 		}
 	}
 	return fields

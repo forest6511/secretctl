@@ -43,6 +43,7 @@ var (
 	ErrAliasConflict        = errors.New("vault: alias conflicts with another field name or alias")
 	ErrFieldNotFound        = errors.New("vault: field not found")
 	ErrFieldSensitive       = errors.New("vault: field is marked as sensitive")
+	ErrInputTypeInvalid     = errors.New("vault: inputType must be empty, \"text\", or \"textarea\"")
 )
 
 // Field represents a single field within a multi-field secret.
@@ -64,6 +65,11 @@ type Field struct {
 	// Kind is reserved for Phase 3 schema validation.
 	// Examples: "password", "url", "port", "hostname"
 	Kind string `json:"kind,omitempty"`
+
+	// InputType specifies UI rendering preference for this field.
+	// Per ADR-005: Separate from Kind to avoid conflict with Phase 3 schema validation.
+	// Valid values: "" (default, treated as "text"), "text", "textarea"
+	InputType string `json:"inputType,omitempty"`
 
 	// Hint provides UI/AI description for this field.
 	// Not encrypted, visible to AI agents.
@@ -125,6 +131,11 @@ func ValidateField(name string, field *Field) error {
 	// Validate kind (Phase 3 reserved, but validate length)
 	if len(field.Kind) > MaxKindLength {
 		return fmt.Errorf("%w: field %q kind exceeds %d characters", ErrKindTooLong, name, MaxKindLength)
+	}
+
+	// Validate inputType per ADR-005: must be empty, "text", or "textarea"
+	if field.InputType != "" && field.InputType != "text" && field.InputType != "textarea" {
+		return fmt.Errorf("%w: field %q has invalid inputType %q", ErrInputTypeInvalid, name, field.InputType)
 	}
 
 	return nil
