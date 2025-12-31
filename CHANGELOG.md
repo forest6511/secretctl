@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Textarea Field Support** - Multi-line input for SSH keys, certificates, and other large text values
+  - New `inputType` field attribute: `"text"` (default) or `"textarea"`
+  - SSH template's `private_key` field now uses textarea input
+  - Desktop App: Textarea component with proper masking for sensitive fields
+  - CLI: Multi-line input support when `inputType` is `"textarea"`
+
 ## [0.7.0] - 2025-12-30
 
 ### Added
@@ -177,7 +184,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CLI commands: init, lock, unlock, set, get, list, delete
 - Audit commands: list, verify
 
-[Unreleased]: https://github.com/forest6511/secretctl/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/forest6511/secretctl/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/forest6511/secretctl/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/forest6511/secretctl/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/forest6511/secretctl/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/forest6511/secretctl/compare/v0.4.0...v0.4.1

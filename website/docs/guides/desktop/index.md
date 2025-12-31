@@ -178,8 +178,30 @@ When copying a secret:
 - Click the eye icon to reveal temporarily
 - Values are masked when switching away
 
+## Multi-Field Secrets
+
+The desktop app supports multi-field secrets with pre-defined templates:
+
+| Template | Use Case | Fields |
+|----------|----------|--------|
+| **Login** | Website credentials | `username`, `password` |
+| **Database** | Database connections | `host`, `port`, `username`, `password`, `database` |
+| **API Key** | API credentials | `api_key`, `api_secret` |
+| **SSH Key** | SSH authentication | `private_key`, `passphrase` |
+
+### SSH Keys
+
+The **SSH Key** template's `private_key` field uses a textarea input, making it easy to paste multi-line PEM-format keys:
+
+1. Click **Add Secret**
+2. Select **SSH Key** template
+3. Paste your SSH private key into the textarea
+4. Optionally add a passphrase
+5. Click **Save**
+
+See [Field Names Reference](/docs/reference/field-names) for complete template documentation.
+
 ## Next Steps
 
-- [Managing Secrets](/docs/guides/desktop/managing-secrets) - Create, edit, delete secrets
 - [Keyboard Shortcuts](/docs/guides/desktop/keyboard-shortcuts) - Master the shortcuts
 - [Audit Logs](/docs/guides/desktop/audit-logs) - View and export activity logs
