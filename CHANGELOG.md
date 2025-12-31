@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Textarea Field Support** - Multi-line input for SSH keys, certificates, and other large text values
+  - New `inputType` field attribute: `"text"` (default) or `"textarea"`
+  - SSH template's `private_key` field now uses textarea input
+  - Desktop App: Textarea component with proper masking for sensitive fields
+  - CLI: Multi-line input support when `inputType` is `"textarea"`
+
 ## [0.7.0] - 2025-12-30
 
 ### Added
