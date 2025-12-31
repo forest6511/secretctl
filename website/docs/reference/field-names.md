@@ -182,8 +182,8 @@ For storing SSH private keys and passphrases.
 
 | Field | Sensitive | Input Type | Description |
 |-------|-----------|------------|-------------|
-| `private_key` | Yes | Textarea | SSH private key content (multi-line) |
-| `passphrase` | Yes | Text | Key passphrase (optional) |
+| `private_key` | Yes | `textarea` | SSH private key content (multi-line) |
+| `passphrase` | Yes | `text` | Key passphrase (optional) |
 
 :::tip Multi-line Input
 The `private_key` field uses a textarea input in the Desktop App, making it easy to paste PEM-format SSH keys. The CLI also supports multi-line input for this field.
@@ -219,8 +219,9 @@ Each field has the following attributes:
 | Attribute | Type | Description |
 |-----------|------|-------------|
 | `value` | string | The field's secret value |
-| `sensitive` | boolean | Whether the value should be masked (default: false) |
+| `sensitive` | boolean | Whether the value should be masked |
 | `inputType` | string | UI input type: `"text"` (default) or `"textarea"` |
+| `kind` | string | Reserved for Phase 3 schema validation (optional) |
 | `aliases` | string[] | Alternative names for the field (optional) |
 | `hint` | string | Helper text shown in UI (optional) |
 
