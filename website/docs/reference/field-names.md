@@ -180,10 +180,14 @@ For storing SSH private keys and passphrases.
 
 ### Fields
 
-| Field | Sensitive | Description |
-|-------|-----------|-------------|
-| `private_key` | Yes | SSH private key content |
-| `passphrase` | Yes | Key passphrase (optional) |
+| Field | Sensitive | Input Type | Description |
+|-------|-----------|------------|-------------|
+| `private_key` | Yes | Textarea | SSH private key content (multi-line) |
+| `passphrase` | Yes | Text | Key passphrase (optional) |
+
+:::tip Multi-line Input
+The `private_key` field uses a textarea input in the Desktop App, making it easy to paste PEM-format SSH keys. The CLI also supports multi-line input for this field.
+:::
 
 ### Environment Bindings
 
@@ -205,6 +209,31 @@ chmod 600 /tmp/key
 ssh -i /tmp/key user@server1
 rm /tmp/key
 ```
+
+---
+
+## Field Attributes
+
+Each field has the following attributes:
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `value` | string | The field's secret value |
+| `sensitive` | boolean | Whether the value should be masked (default: false) |
+| `inputType` | string | UI input type: `"text"` (default) or `"textarea"` |
+| `aliases` | string[] | Alternative names for the field (optional) |
+| `hint` | string | Helper text shown in UI (optional) |
+
+### Input Type
+
+The `inputType` attribute controls how the field is rendered in the Desktop App:
+
+| Input Type | Use Case | Example Fields |
+|------------|----------|----------------|
+| `text` | Single-line values | `username`, `password`, `api_key` |
+| `textarea` | Multi-line values | `private_key`, certificates, configs |
+
+When using templates, the `inputType` is automatically set based on the field's typical content.
 
 ---
 
@@ -374,4 +403,4 @@ secretctl set custom/service \
 
 - [CLI Commands](/docs/reference/cli-commands) - Full CLI reference
 - [MCP Tools](/docs/reference/mcp-tools) - MCP tool documentation
-- [Managing Secrets](/docs/guides/desktop/managing-secrets) - Desktop app guide
+- [Desktop App Guide](/docs/guides/desktop) - Desktop app overview
