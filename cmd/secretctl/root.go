@@ -353,6 +353,7 @@ func promptTemplateFields(fields map[string]vault.Field) error {
 				Value:     value,
 				Sensitive: tf.Sensitive,
 				Kind:      tf.Kind,
+				InputType: tf.InputType,
 			}
 		}
 	}
@@ -367,8 +368,9 @@ func readTemplateField(tf TemplateField) (string, error) {
 	}
 
 	switch {
-	case tf.Sensitive && tf.Name == "private_key":
-		// Multi-line input for private keys (read until EOF)
+	case tf.InputType == "textarea":
+		// Multi-line input for textarea fields (read until EOF) per ADR-005
+		// Note: InputType check comes BEFORE Sensitive check
 		fmt.Printf("%s (paste, then Ctrl+D):\n", prompt)
 		valueBytes, err := io.ReadAll(os.Stdin)
 		if err != nil {

@@ -1040,7 +1040,7 @@ func (v *Vault) SetSecret(key string, entry *SecretEntry) error {
 	// Calculate total data size for disk space check
 	dataSize := len(key)
 	for name, field := range fields {
-		dataSize += len(name) + len(field.Value) + len(field.Kind) + len(field.Hint)
+		dataSize += len(name) + len(field.Value) + len(field.Kind) + len(field.InputType) + len(field.Hint)
 		for _, alias := range field.Aliases {
 			dataSize += len(alias)
 		}

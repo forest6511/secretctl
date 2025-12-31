@@ -7,7 +7,27 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
-import { FieldsSection, FieldDTO } from '@/components/FieldsSection'
+import { FieldsSection, FieldDTO, InputType } from '@/components/FieldsSection'
+
+// Helper to normalize inputType from backend (string) to UI type (InputType)
+// Defaults to undefined (which renders as text) for unknown values
+function normalizeInputType(value: string | undefined): InputType | undefined {
+  if (value === 'text' || value === 'textarea') return value
+  return undefined
+}
+
+// Convert Wails FieldDTO to component FieldDTO with normalized inputType
+function normalizeFields(fields: Record<string, { value: string; sensitive: boolean; aliases?: string[]; kind?: string; inputType?: string; hint?: string }>): Record<string, FieldDTO> {
+  const result: Record<string, FieldDTO> = {}
+  for (const [key, field] of Object.entries(fields)) {
+    result[key] = {
+      ...field,
+      inputType: normalizeInputType(field.inputType)
+    }
+  }
+  return result
+}
+
 import { TemplateSelector } from '@/components/TemplateSelector'
 import { AddFieldDialog } from '@/components/AddFieldDialog'
 import { BindingsSection } from '@/components/BindingsSection'
@@ -234,6 +254,7 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
       newFields[field.name] = {
         value: '',
         sensitive: field.sensitive,
+        inputType: normalizeInputType(field.inputType),
         hint: field.hint,
       }
       newFieldOrder.push(field.name)
@@ -251,7 +272,7 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
     setFormTags(selectedSecret.tags?.join(', ') || '')
     // Populate multi-field state
     if (selectedSecret.fields && Object.keys(selectedSecret.fields).length > 0) {
-      setFormFields(selectedSecret.fields)
+      setFormFields(normalizeFields(selectedSecret.fields))
       setFormFieldOrder(selectedSecret.fieldOrder || Object.keys(selectedSecret.fields))
     } else {
       // Legacy: single value -> value field
@@ -616,7 +637,7 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
               {selectedSecret.fields && Object.keys(selectedSecret.fields).length > 0 ? (
                 <FieldsSection
                   secretKey={selectedSecret.key}
-                  fields={selectedSecret.fields}
+                  fields={normalizeFields(selectedSecret.fields)}
                   fieldOrder={selectedSecret.fieldOrder || []}
                   readOnly={true}
                 />

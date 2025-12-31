@@ -273,6 +273,7 @@ type FieldDTO struct {
 	Sensitive bool     `json:"sensitive"`
 	Aliases   []string `json:"aliases,omitempty"`
 	Kind      string   `json:"kind,omitempty"`
+	InputType string   `json:"inputType,omitempty"` // "text" (default) | "textarea" per ADR-005
 	Hint      string   `json:"hint,omitempty"`
 }
 
@@ -376,6 +377,7 @@ func (a *App) GetSecret(key string) (*Secret, error) {
 				Sensitive: field.Sensitive,
 				Aliases:   field.Aliases,
 				Kind:      field.Kind,
+				InputType: field.InputType,
 				Hint:      field.Hint,
 			}
 			fieldOrder = append(fieldOrder, name)
@@ -503,6 +505,13 @@ func validateSecretDTO(dto SecretUpdateDTO) error {
 		}
 	}
 
+	// Validate inputType per ADR-005: must be empty, "text", or "textarea"
+	for name, field := range dto.Fields {
+		if field.InputType != "" && field.InputType != "text" && field.InputType != "textarea" {
+			return fmt.Errorf("field '%s' has invalid inputType '%s': must be empty, 'text', or 'textarea'", name, field.InputType)
+		}
+	}
+
 	return nil
 }
 
@@ -525,6 +534,7 @@ func (a *App) UpdateSecretMultiField(dto SecretUpdateDTO) error {
 			Sensitive: fieldDTO.Sensitive,
 			Aliases:   fieldDTO.Aliases,
 			Kind:      fieldDTO.Kind,
+			InputType: fieldDTO.InputType,
 			Hint:      fieldDTO.Hint,
 		}
 	}
@@ -604,6 +614,7 @@ func (a *App) CreateSecretMultiField(dto SecretUpdateDTO) error {
 			Sensitive: fieldDTO.Sensitive,
 			Aliases:   fieldDTO.Aliases,
 			Kind:      fieldDTO.Kind,
+			InputType: fieldDTO.InputType,
 			Hint:      fieldDTO.Hint,
 		}
 	}
@@ -953,6 +964,7 @@ type TemplateFieldInfo struct {
 	Name      string `json:"name"`
 	Sensitive bool   `json:"sensitive"`
 	Hint      string `json:"hint"`
+	InputType string `json:"inputType,omitempty"` // "text" (default) | "textarea" per ADR-005
 }
 
 // TemplateInfo represents a secret template
@@ -1019,7 +1031,7 @@ func (a *App) GetTemplates() []TemplateInfo {
 			Description: "SSH private key and passphrase",
 			Icon:        "terminal",
 			Fields: []TemplateFieldInfo{
-				{Name: "private_key", Sensitive: true, Hint: "SSH private key"},
+				{Name: "private_key", Sensitive: true, Hint: "SSH private key", InputType: "textarea"},
 				{Name: "passphrase", Sensitive: true, Hint: "Key passphrase (optional)"},
 			},
 			Bindings: map[string]string{},

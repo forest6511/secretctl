@@ -162,6 +162,38 @@ func TestValidateField(t *testing.T) {
 			},
 			wantErr: ErrKindTooLong,
 		},
+
+		// InputType validation (ADR-005)
+		{
+			name:      "valid inputType empty",
+			fieldName: "private_key",
+			field:     &Field{Value: "key", InputType: ""},
+			wantErr:   nil,
+		},
+		{
+			name:      "valid inputType text",
+			fieldName: "password",
+			field:     &Field{Value: "secret", InputType: "text"},
+			wantErr:   nil,
+		},
+		{
+			name:      "valid inputType textarea",
+			fieldName: "private_key",
+			field:     &Field{Value: "-----BEGIN RSA PRIVATE KEY-----", InputType: "textarea"},
+			wantErr:   nil,
+		},
+		{
+			name:      "invalid inputType",
+			fieldName: "field",
+			field:     &Field{Value: "test", InputType: "invalid"},
+			wantErr:   ErrInputTypeInvalid,
+		},
+		{
+			name:      "invalid inputType multiline",
+			fieldName: "field",
+			field:     &Field{Value: "test", InputType: "multiline"},
+			wantErr:   ErrInputTypeInvalid,
+		},
 	}
 
 	// Initialize aliases for "too many aliases" test
@@ -448,6 +480,9 @@ func TestNewDefaultField(t *testing.T) {
 	}
 	if field.Kind != "" {
 		t.Errorf("NewDefaultField().Kind = %q, want empty", field.Kind)
+	}
+	if field.InputType != "" {
+		t.Errorf("NewDefaultField().InputType = %q, want empty", field.InputType)
 	}
 	if field.Hint != "" {
 		t.Errorf("NewDefaultField().Hint = %q, want empty", field.Hint)

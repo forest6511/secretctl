@@ -95,6 +95,7 @@ export namespace main {
 	    sensitive: boolean;
 	    aliases?: string[];
 	    kind?: string;
+	    inputType?: string;
 	    hint?: string;
 	
 	    static createFrom(source: any = {}) {
@@ -107,6 +108,7 @@ export namespace main {
 	        this.sensitive = source["sensitive"];
 	        this.aliases = source["aliases"];
 	        this.kind = source["kind"];
+	        this.inputType = source["inputType"];
 	        this.hint = source["hint"];
 	    }
 	}
@@ -244,6 +246,7 @@ export namespace main {
 	    name: string;
 	    sensitive: boolean;
 	    hint: string;
+	    inputType?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new TemplateFieldInfo(source);
@@ -254,6 +257,7 @@ export namespace main {
 	        this.name = source["name"];
 	        this.sensitive = source["sensitive"];
 	        this.hint = source["hint"];
+	        this.inputType = source["inputType"];
 	    }
 	}
 	export class TemplateInfo {
