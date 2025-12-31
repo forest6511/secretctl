@@ -186,12 +186,12 @@ The desktop app supports multi-field secrets with pre-defined templates:
 |----------|----------|--------|
 | **Login** | Website credentials | `username`, `password` |
 | **Database** | Database connections | `host`, `port`, `username`, `password`, `database` |
-| **API** | API credentials | `api_key`, `api_secret` |
-| **SSH** | SSH authentication | `private_key`, `passphrase` |
+| **API Key** | API credentials | `api_key`, `api_secret` |
+| **SSH Key** | SSH authentication | `private_key`, `passphrase` |
 
 ### SSH Keys
 
-The **SSH** template's `private_key` field uses a textarea input, making it easy to paste multi-line PEM-format keys:
+The **SSH Key** template's `private_key` field uses a textarea input, making it easy to paste multi-line PEM-format keys:
 
 1. Click **Add Secret**
 2. Select **SSH Key** template
