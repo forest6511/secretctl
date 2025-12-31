@@ -354,7 +354,7 @@ $ secretctl audit verify
 secretctl uses only:
 - Go standard library
 - `golang.org/x/crypto` (Argon2, HKDF)
-- `github.com/mattn/go-sqlite3` (storage)
+- `modernc.org/sqlite` (storage, Pure Go implementation)
 - `github.com/spf13/cobra` (CLI framework)
 
 ### Verification
