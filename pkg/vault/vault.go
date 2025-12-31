@@ -51,7 +51,7 @@ import (
 	"github.com/forest6511/secretctl/pkg/audit"
 	"github.com/forest6511/secretctl/pkg/crypto"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // Constants
@@ -373,7 +373,7 @@ func (v *Vault) Init(masterPassword string) error {
 		return fmt.Errorf("vault: failed to set database permissions: %w", err)
 	}
 
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return fmt.Errorf("vault: failed to open database: %w", err)
 	}
@@ -461,7 +461,7 @@ func (v *Vault) Unlock(masterPassword string) error {
 
 	// 1. Open database to read salt (ADR-003: salt stored in DB for atomic password change)
 	dbPath := filepath.Join(v.path, DBFileName)
-	db, err := sql.Open("sqlite3", dbPath+"?_busy_timeout=5000")
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=busy_timeout(5000)")
 	if err != nil {
 		return fmt.Errorf("vault: failed to open database: %w", err)
 	}
@@ -485,7 +485,7 @@ func (v *Vault) Unlock(masterPassword string) error {
 			return fmt.Errorf("vault: failed to read salt file: %w", err)
 		}
 		// Reopen database for subsequent operations
-		db, err = sql.Open("sqlite3", dbPath+"?_busy_timeout=5000")
+		db, err = sql.Open("sqlite", dbPath+"?_pragma=busy_timeout(5000)")
 		if err != nil {
 			return fmt.Errorf("vault: failed to reopen database: %w", err)
 		}
@@ -1723,7 +1723,7 @@ func (v *Vault) CheckIntegrity() (*IntegrityCheckResult, error) {
 	}
 
 	// Open database and check integrity
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		result.Valid = false
 		result.DBIntegrity = false
@@ -1966,7 +1966,7 @@ func (v *Vault) Repair() error {
 
 	// Check if database exists with vault_keys
 	dbPath := filepath.Join(v.path, DBFileName)
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return fmt.Errorf("vault: cannot repair without valid database: %w", err)
 	}
