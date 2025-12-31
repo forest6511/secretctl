@@ -88,9 +88,10 @@ export function FieldEditor({
 
   // Security: For sensitive fields, mask value until visible
   // - Textarea: Must show masked value when hidden (no type="password" equivalent)
+  //   Only mask when field has content (allows input for new/empty fields)
   // - Input in read mode: Show masked value (type="password" only works for visual masking in edit mode)
   // - Input in edit mode: type="password" handles visual masking, actual value preserved for editing
-  const shouldMaskTextarea = isTextarea && field.sensitive && !isVisible
+  const shouldMaskTextarea = isTextarea && field.sensitive && !isVisible && (field.value?.length ?? 0) > 0
   const shouldMaskInput = !isTextarea && field.sensitive && !isVisible && readOnly
   const displayValue = (shouldMaskTextarea || shouldMaskInput)
     ? '••••••••'
@@ -129,8 +130,13 @@ export function FieldEditor({
             value={displayValue}
             readOnly={readOnly || shouldMaskTextarea}
             onChange={handleChange}
-            className="font-mono min-h-[120px] whitespace-pre-wrap"
-            placeholder={shouldMaskTextarea ? 'Click show to view/edit' : undefined}
+            className={`font-mono min-h-[120px] whitespace-pre-wrap ${
+              shouldMaskTextarea ? 'cursor-not-allowed bg-muted' : ''
+            }`}
+            title={shouldMaskTextarea
+              ? (readOnly ? 'Click 👁 to view' : 'Click 👁 to edit')
+              : undefined
+            }
             data-testid={`field-value-${fieldName}`}
           />
         ) : (
