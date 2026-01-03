@@ -445,15 +445,71 @@ describe('FieldEditor', () => {
       )
 
       const textarea = screen.getByTestId('field-value-testField')
-      // In edit mode, actual value is always shown (user needs to see what they type)
+      // In edit mode, actual value is stored (masked visually via -webkit-text-security)
       expect(textarea).toHaveValue('my-ssh-key')
 
-      // Toggle button still works for future reveal/hide cycles
+      // Toggle button reveals/hides content
       const toggleButton = screen.getByTestId('toggle-field-testField')
       await userEvent.click(toggleButton)
 
-      // Value remains visible in edit mode
+      // Value remains the same, but visual masking is toggled
       expect(textarea).toHaveValue('my-ssh-key')
+    })
+
+    // Note: The actual -webkit-text-security property only works in Chromium (Wails runtime).
+    // happy-dom doesn't support it, so we verify via data-masked attribute instead.
+
+    it('applies masking in edit mode for sensitive textarea when hidden', () => {
+      const field: FieldDTO = {
+        value: 'my-ssh-key',
+        sensitive: true,
+        inputType: 'textarea',
+      }
+
+      render(
+        <FieldEditor {...defaultProps} field={field} readOnly={false} />
+      )
+
+      const textarea = screen.getByTestId('field-value-testField')
+      // Per ADR-005: "Same UX as single-line Input"
+      // data-masked indicates -webkit-text-security: disc is applied
+      expect(textarea).toHaveAttribute('data-masked', 'true')
+    })
+
+    it('removes masking when visibility is toggled', async () => {
+      const field: FieldDTO = {
+        value: 'my-ssh-key',
+        sensitive: true,
+        inputType: 'textarea',
+      }
+
+      render(
+        <FieldEditor {...defaultProps} field={field} readOnly={false} />
+      )
+
+      const textarea = screen.getByTestId('field-value-testField')
+      expect(textarea).toHaveAttribute('data-masked', 'true')
+
+      const toggleButton = screen.getByTestId('toggle-field-testField')
+      await userEvent.click(toggleButton)
+
+      // After toggle, masking is removed
+      expect(textarea).not.toHaveAttribute('data-masked')
+    })
+
+    it('does NOT apply masking for non-sensitive textarea', () => {
+      const field: FieldDTO = {
+        value: 'public content',
+        sensitive: false,
+        inputType: 'textarea',
+      }
+
+      render(
+        <FieldEditor {...defaultProps} field={field} readOnly={false} />
+      )
+
+      const textarea = screen.getByTestId('field-value-testField')
+      expect(textarea).not.toHaveAttribute('data-masked')
     })
   })
 
