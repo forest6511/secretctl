@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts,.tsx",
     "test": "npx playwright test",
-    "test:unit": "echo 'Vitest not yet configured - run: npm install -D vitest @testing-library/react'",
+    "test:unit": "vitest run",
     "test:e2e": "npx playwright test",
     "test:e2e:ui": "npx playwright test --ui",
     "test:e2e:headed": "npx playwright test --headed"
@@ -22,6 +22,9 @@
   "devDependencies": {
     "@playwright/test": "^1.57.0",
     "@tailwindcss/vite": "^4.1.17",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.1",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^24.10.1",
     "@types/react": "^18.0.17",
     "@types/react-dom": "^18.0.6",
@@ -29,11 +32,13 @@
     "autoprefixer": "^10.4.22",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "happy-dom": "^20.0.11",
     "lucide-react": "^0.556.0",
     "postcss": "^8.5.6",
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.1.17",
     "typescript": "^5.9.3",
-    "vite": "^7.2.6"
+    "vite": "^7.2.6",
+    "vitest": "^4.0.16"
   }
 }

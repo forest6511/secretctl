@@ -86,17 +86,20 @@ export function FieldEditor({
   // Determine if this field should use textarea per ADR-005
   const isTextarea = field.inputType === 'textarea'
 
-  // Security: For sensitive fields, mask value until visible
-  // - Textarea in READ mode: Show masked value when hidden (no type="password" equivalent)
-  //   Only mask when field has content and in read mode (edit mode needs free typing)
-  // - Textarea in EDIT mode: Show actual value (user needs to see what they're typing)
-  // - Input in read mode: Show masked value (type="password" only works for visual masking in edit mode)
-  // - Input in edit mode: type="password" handles visual masking, actual value preserved for editing
-  const shouldMaskTextarea = isTextarea && field.sensitive && !isVisible && readOnly && (field.value?.length ?? 0) > 0
-  const shouldMaskInput = !isTextarea && field.sensitive && !isVisible && readOnly
-  const displayValue = (shouldMaskTextarea || shouldMaskInput)
-    ? '••••••••'
-    : field.value
+  // === Separation of Concerns ===
+  // 1. Display masking: When to show '••••••••' instead of actual value
+  //    - Only in READ mode (readOnly=true) for sensitive fields when hidden
+  //    - In EDIT mode, always show actual value (user needs to see what they're typing)
+  // 2. Input blocking: Controlled solely by readOnly prop
+  // 3. Visual styling: Applied when display is masked
+  const hasContent = (field.value?.length ?? 0) > 0
+  const shouldMaskDisplay = field.sensitive && !isVisible && readOnly && hasContent
+
+  // Display value: masked in read mode when hidden, actual value otherwise
+  const displayValue = shouldMaskDisplay ? '••••••••' : field.value
+
+  // Visual styling for masked state (read mode only)
+  const maskedStyles = shouldMaskDisplay ? 'cursor-not-allowed bg-muted' : ''
 
   return (
     <div className="space-y-1" data-testid={`field-${fieldName}`}>
@@ -129,15 +132,10 @@ export function FieldEditor({
         {isTextarea ? (
           <Textarea
             value={displayValue}
-            readOnly={readOnly || shouldMaskTextarea}
+            readOnly={readOnly}
             onChange={handleChange}
-            className={`font-mono min-h-[120px] whitespace-pre-wrap ${
-              shouldMaskTextarea ? 'cursor-not-allowed bg-muted' : ''
-            }`}
-            title={shouldMaskTextarea
-              ? (readOnly ? 'Click 👁 to view' : 'Click 👁 to edit')
-              : undefined
-            }
+            className={`font-mono min-h-[120px] whitespace-pre-wrap ${maskedStyles}`}
+            title={shouldMaskDisplay ? 'Click 👁 to view' : undefined}
             data-testid={`field-value-${fieldName}`}
           />
         ) : (
@@ -146,7 +144,7 @@ export function FieldEditor({
             value={displayValue}
             readOnly={readOnly}
             onChange={handleChange}
-            className="font-mono"
+            className={`font-mono ${maskedStyles}`}
             data-testid={`field-value-${fieldName}`}
           />
         )}
