@@ -37,7 +37,15 @@ export function FieldEditor({
   onSensitiveToggle,
   onDelete
 }: FieldEditorProps) {
-  const [isVisible, setIsVisible] = useState(false)
+  // Default visibility based on field type:
+  // - Input (password): Hidden by default (standard UX)
+  // - Textarea (SSH key, etc.): Visible by default (users need to verify pasted content)
+  //
+  // Note on audit logging: Textarea defaults visible, so initial view is not logged.
+  // This is intentional - users pasting SSH keys/certificates need immediate verification.
+  // Audit is triggered when user toggles from hidden→visible (active reveal action).
+  const isTextarea = field.inputType === 'textarea'
+  const [isVisible, setIsVisible] = useState(isTextarea)
   const toast = useToast()
 
   const handleToggleVisibility = async () => {
@@ -83,15 +91,15 @@ export function FieldEditor({
     }
   }
 
-  // Determine if this field should use textarea per ADR-005
-  const isTextarea = field.inputType === 'textarea'
-
   // === Separation of Concerns ===
   // 1. Display masking: When to show '••••••••' instead of actual value
   //    - Only in READ mode (readOnly=true) for sensitive fields when hidden
-  //    - In EDIT mode, always show actual value (user needs to see what they're typing)
   // 2. Input blocking: Controlled solely by readOnly prop
   // 3. Visual styling: Applied when display is masked
+  // 4. Textarea masking: In EDIT mode, use -webkit-text-security for dot display
+  //    - Per ADR-005: "Same UX as single-line Input"
+  //    - Works in Chromium (Wails runtime), shows dots like password input
+  //    - Eye button toggles masking on/off
   const hasContent = (field.value?.length ?? 0) > 0
   const shouldMaskDisplay = field.sensitive && !isVisible && readOnly && hasContent
 
@@ -100,6 +108,11 @@ export function FieldEditor({
 
   // Visual styling for masked state (read mode only)
   const maskedStyles = shouldMaskDisplay ? 'cursor-not-allowed bg-muted' : ''
+
+  // For textarea in edit mode, apply text-security for password-like masking
+  // Uses -webkit-text-security: disc (Chromium/Wails) to show dots like password input
+  // Per ADR-005: "Same UX as single-line Input"
+  const textareaEditMask = isTextarea && field.sensitive && !isVisible && !readOnly
 
   return (
     <div className="space-y-1" data-testid={`field-${fieldName}`}>
@@ -135,8 +148,10 @@ export function FieldEditor({
             readOnly={readOnly}
             onChange={handleChange}
             className={`font-mono min-h-[120px] whitespace-pre-wrap ${maskedStyles}`}
-            title={shouldMaskDisplay ? 'Click 👁 to view' : undefined}
+            style={textareaEditMask ? { WebkitTextSecurity: 'disc' } as React.CSSProperties : undefined}
+            title={shouldMaskDisplay || textareaEditMask ? 'Click 👁 to view' : undefined}
             data-testid={`field-value-${fieldName}`}
+            data-masked={textareaEditMask || shouldMaskDisplay ? 'true' : undefined}
           />
         ) : (
           <Input
