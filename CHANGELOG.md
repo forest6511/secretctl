@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.5] - 2026-01-04
+
+### Fixed
+- **Desktop App** - Textarea edit mode now supports password-like masking (#150)
+  - Uses `-webkit-text-security: disc` for consistent UX with single-line inputs
+  - Textarea defaults to visible (for SSH key verification), Input defaults to hidden
+  - Eye button toggles visibility for both field types
+- **Desktop App** - Fixed textarea becoming readonly after typing one character (#149)
+  - Separated display masking from input blocking logic
+  - Added regression tests to prevent future issues
+- **Desktop App** - Fixed new SSH secrets not accepting textarea input (#147)
+  - SSH key template now properly renders textarea for `private_key` field
+
+### Added
+- **Testing** - Behavior Matrix Tests for automatic UX consistency verification
+  - Uses `describe.each()` pattern to test Input and Textarea with same scenarios
+  - Ensures ADR-005 "Same UX as single-line Input" compliance
+
 ## [0.8.4] - 2025-12-31
 
 ### Added
