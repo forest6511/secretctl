@@ -37,7 +37,15 @@ export function FieldEditor({
   onSensitiveToggle,
   onDelete
 }: FieldEditorProps) {
-  const [isVisible, setIsVisible] = useState(false)
+  // Default visibility based on field type:
+  // - Input (password): Hidden by default (standard UX)
+  // - Textarea (SSH key, etc.): Visible by default (users need to verify pasted content)
+  //
+  // Note on audit logging: Textarea defaults visible, so initial view is not logged.
+  // This is intentional - users pasting SSH keys/certificates need immediate verification.
+  // Audit is triggered when user toggles from hidden→visible (active reveal action).
+  const isTextarea = field.inputType === 'textarea'
+  const [isVisible, setIsVisible] = useState(isTextarea)
   const toast = useToast()
 
   const handleToggleVisibility = async () => {
@@ -82,9 +90,6 @@ export function FieldEditor({
       onChange(e.target.value)
     }
   }
-
-  // Determine if this field should use textarea per ADR-005
-  const isTextarea = field.inputType === 'textarea'
 
   // === Separation of Concerns ===
   // 1. Display masking: When to show '••••••••' instead of actual value
@@ -143,7 +148,7 @@ export function FieldEditor({
             readOnly={readOnly}
             onChange={handleChange}
             className={`font-mono min-h-[120px] whitespace-pre-wrap ${maskedStyles}`}
-            style={textareaEditMask ? { WebkitTextSecurity: 'disc' } : undefined}
+            style={textareaEditMask ? { WebkitTextSecurity: 'disc' } as React.CSSProperties : undefined}
             title={shouldMaskDisplay || textareaEditMask ? 'Click 👁 to view' : undefined}
             data-testid={`field-value-${fieldName}`}
             data-masked={textareaEditMask || shouldMaskDisplay ? 'true' : undefined}

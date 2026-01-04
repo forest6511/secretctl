@@ -38,12 +38,17 @@ vi.mock('@/hooks/useToast', () => ({
  *
  * | Scenario                    | Input              | Textarea           |
  * |-----------------------------|--------------------|--------------------|
+ * | Default visibility          | Hidden             | Visible            |
  * | Edit + Sensitive + Hidden   | type=password      | data-masked=true   |
  * | Edit + Sensitive + Visible  | type=text          | data-masked=null   |
  * | Read + Sensitive + Hidden   | value=••••••••     | value=••••••••     |
  * | Read + Sensitive + Visible  | actual value       | actual value       |
  * | Eye button presence         | YES                | YES                |
  * | Eye button functional       | YES                | YES                |
+ *
+ * Note: Textarea defaults to visible because users typically paste and verify
+ * multi-line content (SSH keys, certificates). Input defaults to hidden for
+ * standard password UX.
  */
 
 describe('FieldEditor ADR-005 Consistency Matrix', () => {
@@ -78,7 +83,7 @@ describe('FieldEditor ADR-005 Consistency Matrix', () => {
         expect(toggleButton).toBeInTheDocument()
       })
 
-      it('applies masking when hidden (default state)', () => {
+      it('has correct default visibility based on field type', () => {
         const field: FieldDTO = {
           value: 'secret-value',
           sensitive: true,
@@ -92,15 +97,15 @@ describe('FieldEditor ADR-005 Consistency Matrix', () => {
         const element = screen.getByTestId('field-value-testField')
 
         if (isTextarea) {
-          // Textarea uses data-masked attribute
-          expect(element).toHaveAttribute('data-masked', 'true')
+          // Textarea: defaults to VISIBLE (user needs to verify pasted content)
+          expect(element).not.toHaveAttribute('data-masked')
         } else {
-          // Input uses type=password
+          // Input: defaults to HIDDEN (standard password UX)
           expect(element).toHaveAttribute('type', 'password')
         }
       })
 
-      it('removes masking when visibility toggled', async () => {
+      it('toggles masking when eye button clicked', async () => {
         const field: FieldDTO = {
           value: 'secret-value',
           sensitive: true,
@@ -114,11 +119,14 @@ describe('FieldEditor ADR-005 Consistency Matrix', () => {
         const element = screen.getByTestId('field-value-testField')
         const toggleButton = screen.getByTestId('toggle-field-testField')
 
+        // Click to toggle from default state
         await userEvent.click(toggleButton)
 
         if (isTextarea) {
-          expect(element).not.toHaveAttribute('data-masked')
+          // Textarea: was visible, now masked
+          expect(element).toHaveAttribute('data-masked', 'true')
         } else {
+          // Input: was masked, now visible
           expect(element).toHaveAttribute('type', 'text')
         }
       })
@@ -164,7 +172,7 @@ describe('FieldEditor ADR-005 Consistency Matrix', () => {
         expect(toggleButton).toBeInTheDocument()
       })
 
-      it('shows fixed-length mask when hidden', () => {
+      it('has correct default visibility in read mode', () => {
         const field: FieldDTO = {
           value: 'secret-value',
           sensitive: true,
@@ -176,10 +184,17 @@ describe('FieldEditor ADR-005 Consistency Matrix', () => {
         )
 
         const element = screen.getByTestId('field-value-testField')
-        expect(element).toHaveValue('••••••••')
+
+        if (isTextarea) {
+          // Textarea: defaults to VISIBLE in read mode too
+          expect(element).toHaveValue('secret-value')
+        } else {
+          // Input: defaults to HIDDEN, shows mask
+          expect(element).toHaveValue('••••••••')
+        }
       })
 
-      it('shows actual value when visibility toggled', async () => {
+      it('toggles display when eye button clicked', async () => {
         const field: FieldDTO = {
           value: 'secret-value',
           sensitive: true,
@@ -195,10 +210,16 @@ describe('FieldEditor ADR-005 Consistency Matrix', () => {
 
         await userEvent.click(toggleButton)
 
-        expect(element).toHaveValue('secret-value')
+        if (isTextarea) {
+          // Textarea: was visible, now masked
+          expect(element).toHaveValue('••••••••')
+        } else {
+          // Input: was masked, now visible
+          expect(element).toHaveValue('secret-value')
+        }
       })
 
-      it('calls ViewSensitiveField for audit logging when revealed', async () => {
+      it('calls ViewSensitiveField for audit logging when revealing hidden content', async () => {
         const field: FieldDTO = {
           value: 'secret-value',
           sensitive: true,
@@ -210,7 +231,16 @@ describe('FieldEditor ADR-005 Consistency Matrix', () => {
         )
 
         const toggleButton = screen.getByTestId('toggle-field-testField')
-        await userEvent.click(toggleButton)
+
+        if (isTextarea) {
+          // Textarea starts visible, first click hides (no audit), second click reveals (audit)
+          await userEvent.click(toggleButton) // hide
+          mockViewSensitiveField.mockClear()
+          await userEvent.click(toggleButton) // reveal - should audit
+        } else {
+          // Input starts hidden, first click reveals (audit)
+          await userEvent.click(toggleButton)
+        }
 
         expect(mockViewSensitiveField).toHaveBeenCalledWith(
           'test-secret',
