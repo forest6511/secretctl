@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.6] - 2026-01-06
+
+### Added
+- **Desktop App** - Input type selector in Add Field dialog (#156)
+  - "Single Line" option for passwords, API keys, usernames
+  - "Multi-line" option for SSH keys, certificates, JSON
+  - Segmented button UI with icons and dynamic help text
+- **Desktop App** - Custom app icon with shield and key design (#154)
+
+### Changed
+- **Desktop App** - Enhanced color theme with Docker-style accents (#155)
+  - Sky-500 primary color for header section
+  - Improved button hover and active states
+  - Enhanced template card hover effect
+
+### Maintenance
+- Consolidated research docs into `docs/internal/research/` (#153)
+
 ## [0.8.5] - 2026-01-04
 
 ### Fixed
@@ -205,7 +223,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CLI commands: init, lock, unlock, set, get, list, delete
 - Audit commands: list, verify
 
-[Unreleased]: https://github.com/forest6511/secretctl/compare/v0.8.4...HEAD
+[Unreleased]: https://github.com/forest6511/secretctl/compare/v0.8.6...HEAD
+[0.8.6]: https://github.com/forest6511/secretctl/compare/v0.8.5...v0.8.6
+[0.8.5]: https://github.com/forest6511/secretctl/compare/v0.8.4...v0.8.5
 [0.8.4]: https://github.com/forest6511/secretctl/compare/v0.7.0...v0.8.4
 [0.7.0]: https://github.com/forest6511/secretctl/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/forest6511/secretctl/compare/v0.5.0...v0.6.0
