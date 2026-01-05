@@ -285,10 +285,10 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
   }
 
   // Multi-field handlers
-  const handleAddField = (name: string, value: string, sensitive: boolean) => {
+  const handleAddField = (name: string, value: string, sensitive: boolean, inputType: InputType) => {
     setFormFields(prev => ({
       ...prev,
-      [name]: { value, sensitive }
+      [name]: { value, sensitive, inputType }
     }))
     setFormFieldOrder(prev => [...prev, name])
     setShowAddFieldDialog(false)
