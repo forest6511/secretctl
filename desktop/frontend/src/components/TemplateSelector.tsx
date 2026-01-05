@@ -34,7 +34,7 @@ export function TemplateSelector({ templates, selectedTemplate, onSelect }: Temp
         {templates.map((template) => (
           <Card
             key={template.id}
-            className={`cursor-pointer transition-all hover:border-primary ${
+            className={`cursor-pointer transition-all hover:border-primary hover:bg-sky-100 hover:shadow-md ${
               selectedTemplate === template.id
                 ? 'border-2 border-primary bg-primary/5'
                 : 'border border-border'
