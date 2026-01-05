@@ -425,22 +425,22 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
   return (
     <div className="flex h-screen macos-titlebar-padding">
       {/* Sidebar */}
-      <div className="w-80 border-r border-border flex flex-col bg-muted/30">
+      <div className="w-80 border-r border-border flex flex-col">
         {/* Header */}
-        <div className="p-4 border-b border-border">
+        <div className="p-4 border-b border-border bg-sky-500 text-white">
           <div className="flex items-center justify-between mb-3">
             <h1 className="text-lg font-semibold">Secrets</h1>
             <div className="flex gap-1">
-              <Button variant="ghost" size="icon" onClick={onNavigateToAudit} title="Audit Log" data-testid="audit-button">
+              <Button variant="ghost" size="icon" className="text-white hover:bg-white hover:text-sky-500 hover:rounded" onClick={onNavigateToAudit} title="Audit Log" data-testid="audit-button">
                 <ClipboardList className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="icon" onClick={loadSecrets} title="Refresh">
+              <Button variant="ghost" size="icon" className="text-white hover:bg-white hover:text-sky-500 hover:rounded" onClick={loadSecrets} title="Refresh">
                 <RefreshCw className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="icon" onClick={() => setShowChangePasswordDialog(true)} title="Change Password" data-testid="change-password-button">
+              <Button variant="ghost" size="icon" className="text-white hover:bg-white hover:text-sky-500 hover:rounded" onClick={() => setShowChangePasswordDialog(true)} title="Change Password" data-testid="change-password-button">
                 <Key className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="icon" onClick={handleLock} title="Lock">
+              <Button variant="ghost" size="icon" className="text-white hover:bg-white hover:text-sky-500 hover:rounded" onClick={handleLock} title="Lock">
                 <Lock className="w-4 h-4" />
               </Button>
             </div>
