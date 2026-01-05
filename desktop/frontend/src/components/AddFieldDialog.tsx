@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus, Type, AlignLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { InputType } from '@/components/FieldEditor'
 
 interface AddFieldDialogProps {
   open: boolean
   existingFieldNames: string[]
-  onAdd: (name: string, value: string, sensitive: boolean) => void
+  onAdd: (name: string, value: string, sensitive: boolean, inputType: InputType) => void
   onCancel: () => void
 }
 
@@ -23,6 +25,7 @@ export function AddFieldDialog({
   const [name, setName] = useState('')
   const [value, setValue] = useState('')
   const [sensitive, setSensitive] = useState(false)
+  const [inputType, setInputType] = useState<InputType>('text')
   const [error, setError] = useState('')
 
   // Reset state when dialog opens
@@ -31,6 +34,7 @@ export function AddFieldDialog({
       setName('')
       setValue('')
       setSensitive(false)
+      setInputType('text')
       setError('')
     }
   }, [open])
@@ -71,7 +75,7 @@ export function AddFieldDialog({
       setError(validationError)
       return
     }
-    onAdd(name, value, sensitive)
+    onAdd(name, value, sensitive, inputType)
   }
 
   const handleNameChange = (newName: string) => {
@@ -122,16 +126,64 @@ export function AddFieldDialog({
             </p>
           </div>
 
+          {/* Input Type Selection */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Field Type</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setInputType('text')}
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded border-2 transition-all ${
+                  inputType === 'text'
+                    ? 'border-sky-500 bg-sky-50 text-sky-700'
+                    : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                }`}
+                data-testid="input-type-text"
+              >
+                <Type className="w-4 h-4" />
+                <span className="text-sm font-medium">Single Line</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setInputType('textarea')}
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded border-2 transition-all ${
+                  inputType === 'textarea'
+                    ? 'border-sky-500 bg-sky-50 text-sky-700'
+                    : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                }`}
+                data-testid="input-type-textarea"
+              >
+                <AlignLeft className="w-4 h-4" />
+                <span className="text-sm font-medium">Multi-line</span>
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {inputType === 'text'
+                ? 'For passwords, API keys, usernames, etc.'
+                : 'For SSH keys, certificates, JSON, etc.'}
+            </p>
+          </div>
+
           <div className="space-y-2">
             <label className="text-sm font-medium">Value</label>
-            <Input
-              type={sensitive ? 'password' : 'text'}
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder="Enter field value"
-              className="font-mono"
-              data-testid="field-value-input"
-            />
+            {inputType === 'text' ? (
+              <Input
+                type={sensitive ? 'password' : 'text'}
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder="Enter field value"
+                className="font-mono"
+                data-testid="field-value-input"
+              />
+            ) : (
+              <Textarea
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder="Enter multi-line value (SSH key, certificate, etc.)"
+                className="font-mono min-h-[120px]"
+                data-testid="field-value-input"
+              />
+            )}
           </div>
 
           <div className="flex items-center gap-2">
