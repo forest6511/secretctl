@@ -349,6 +349,10 @@ allowed_commands:
 
 secretctl includes a native desktop application built with Wails v2:
 
+![secretctl Desktop App](docs/images/gui-screenshot.png)
+
+*Desktop app showing multi-field secrets with templates (Database, API Key, Login, SSH Key)*
+
 ```bash
 # Build the desktop app
 cd desktop && wails build
