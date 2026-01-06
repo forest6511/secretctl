@@ -26,7 +26,7 @@ sidebar_position: 1
         </ul>
       </div>
       <div className="card__footer">
-        <a className="button button--primary button--block" href="/docs/getting-started/for-developers">
+        <a className="button button--primary button--block" href="./for-developers">
           Developer Guide →
         </a>
       </div>
@@ -47,7 +47,7 @@ sidebar_position: 1
         </ul>
       </div>
       <div className="card__footer">
-        <a className="button button--secondary button--block" href="/docs/getting-started/for-users">
+        <a className="button button--secondary button--block" href="./for-users">
           User Guide →
         </a>
       </div>
