@@ -1,20 +1,38 @@
 # secretctl Makefile
 # Common development tasks
 
-.PHONY: all build test lint fmt vet clean install-tools pre-commit coverage help
+.PHONY: all build test lint fmt vet clean install-tools pre-commit coverage help \
+        build-ui test-ui test-e2e typecheck run dev-desktop snapshot
+
+# Version (can be overridden: make build VERSION=1.0.0)
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 
 # Default target
 all: fmt lint test build
 
-# Build the CLI binary
+# Build the CLI binary with version info
 build:
-	@echo "Building secretctl..."
-	@go build -o bin/secretctl ./cmd/secretctl
+	@echo "Building secretctl ($(VERSION))..."
+	@go build -ldflags "-X main.version=$(VERSION)" -o bin/secretctl ./cmd/secretctl
 
 # Build desktop app (requires Wails)
 build-desktop:
 	@echo "Building desktop app..."
 	@cd desktop && wails build
+
+# Build frontend UI only
+build-ui:
+	@echo "Building frontend UI..."
+	@cd desktop/frontend && npm run build
+
+# Run CLI directly (for development)
+run:
+	@go run ./cmd/secretctl $(ARGS)
+
+# Run desktop app in development mode
+dev-desktop:
+	@echo "Starting desktop app in dev mode..."
+	@cd desktop && wails dev
 
 # Run all tests
 test:
@@ -31,6 +49,26 @@ coverage:
 # Run short tests (for pre-commit)
 test-short:
 	@go test -short ./...
+
+# Run frontend unit tests (Vitest)
+test-ui:
+	@echo "Running frontend unit tests..."
+	@cd desktop/frontend && npm run test:unit
+
+# Run E2E tests (Playwright)
+test-e2e:
+	@echo "Running E2E tests..."
+	@cd desktop/frontend && npm run test:e2e
+
+# Run TypeScript type check
+typecheck:
+	@echo "Running TypeScript type check..."
+	@cd desktop/frontend && npm run typecheck
+
+# Build snapshot release (for local testing)
+snapshot:
+	@echo "Building snapshot release..."
+	@goreleaser build --snapshot --clean
 
 # Run linter
 lint:
@@ -83,7 +121,7 @@ clean:
 	@echo "Cleaning..."
 	@rm -rf bin/
 	@rm -f coverage.out
-	@rm -rf desktop/build/
+	@rm -rf desktop/build/bin/
 
 # Quick check before commit (fmt + lint + test-short)
 check: fmt lint test-short
@@ -96,17 +134,37 @@ ci: fmt vet lint test security
 # Help
 help:
 	@echo "Available targets:"
-	@echo "  make build       - Build CLI binary"
-	@echo "  make build-desktop - Build desktop app"
-	@echo "  make test        - Run all tests"
-	@echo "  make coverage    - Run tests with coverage report"
-	@echo "  make lint        - Run golangci-lint"
-	@echo "  make fmt         - Format code with gofmt and goimports"
-	@echo "  make vet         - Run go vet"
-	@echo "  make tidy        - Tidy go modules"
-	@echo "  make security    - Run security scans"
+	@echo ""
+	@echo "Build:"
+	@echo "  make build         - Build CLI binary with version info"
+	@echo "  make build-desktop - Build desktop app (Wails)"
+	@echo "  make build-ui      - Build frontend UI only"
+	@echo "  make snapshot      - Build snapshot release (GoReleaser)"
+	@echo ""
+	@echo "Development:"
+	@echo "  make run ARGS='...' - Run CLI directly"
+	@echo "  make dev-desktop   - Run desktop app in dev mode"
+	@echo ""
+	@echo "Testing:"
+	@echo "  make test          - Run Go tests"
+	@echo "  make test-short    - Run short Go tests"
+	@echo "  make test-ui       - Run frontend unit tests (Vitest)"
+	@echo "  make test-e2e      - Run E2E tests (Playwright)"
+	@echo "  make coverage      - Run tests with coverage report"
+	@echo ""
+	@echo "Code Quality:"
+	@echo "  make fmt           - Format code (gofmt + goimports)"
+	@echo "  make lint          - Run golangci-lint"
+	@echo "  make vet           - Run go vet"
+	@echo "  make typecheck     - Run TypeScript type check"
+	@echo "  make security      - Run security scans"
+	@echo ""
+	@echo "Utilities:"
+	@echo "  make tidy          - Tidy go modules"
+	@echo "  make clean         - Clean build artifacts"
 	@echo "  make install-tools - Install development tools"
-	@echo "  make pre-commit  - Setup pre-commit hooks"
-	@echo "  make clean       - Clean build artifacts"
-	@echo "  make check       - Quick pre-commit check"
-	@echo "  make ci          - Full CI check"
+	@echo "  make pre-commit    - Setup pre-commit hooks"
+	@echo ""
+	@echo "Shortcuts:"
+	@echo "  make check         - Quick pre-commit check"
+	@echo "  make ci            - Full CI check"
