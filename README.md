@@ -37,6 +37,22 @@ secretctl get API_KEY
 
 3. **Defense in depth** — AES-256-GCM encryption at rest, Argon2id key derivation, MCP policy controls, and automatic output sanitization. Multiple layers, not a single point of failure.
 
+```mermaid
+flowchart LR
+    subgraph Flow["How It Works"]
+        AI["🤖 AI Agent<br/>(Claude)"]
+        MCP["🔐 secretctl<br/>MCP Server"]
+        CMD["⚡ Command<br/>(aws, etc)"]
+
+        AI -->|"1. Run aws s3 ls<br/>with aws/*"| MCP
+        MCP -->|"2. Inject secrets<br/>as env vars"| CMD
+        CMD -->|"3. Execute"| MCP
+        MCP -->|"4. Sanitized output<br/>[REDACTED]"| AI
+    end
+
+    AI ~~~ NOTE["✓ Gets command results<br/>✗ Never sees secret values"]
+```
+
 ## Installation
 
 ### From Source
@@ -289,14 +305,6 @@ flowchart LR
         SM2 -->|"[REDACTED]"| AI2
     end
 ```
-
-**How it works:**
-
-| Tool | What AI Sees | What Happens |
-|------|--------------|--------------|
-| `secret_list` | Key names, metadata | No values exposed |
-| `secret_get_masked` | `****WXYZ` | Last 4 chars only |
-| `secret_run` | `[REDACTED:KEY]` | Secrets injected as env vars, output sanitized |
 
 This follows the **"Access Without Exposure"** philosophy used by industry leaders like 1Password and HashiCorp Vault.
 
