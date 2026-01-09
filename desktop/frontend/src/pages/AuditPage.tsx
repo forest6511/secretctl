@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   RefreshCw, Download, CheckCircle, XCircle, AlertCircle,
   ChevronLeft, ChevronRight, Filter, Calendar, Search
@@ -15,27 +16,28 @@ interface AuditPageProps {
   onNavigateBack: () => void
 }
 
-const ACTION_OPTIONS = [
-  { value: '', label: 'All Actions' },
-  { value: 'secret.get', label: 'Get Secret' },
-  { value: 'secret.set', label: 'Set Secret' },
-  { value: 'secret.delete', label: 'Delete Secret' },
-  { value: 'secret.list', label: 'List Secrets' },
-  { value: 'auth.unlock', label: 'Unlock' },
-  { value: 'auth.lock', label: 'Lock' },
-  { value: 'vault.init', label: 'Vault Init' },
-]
-
-const SOURCE_OPTIONS = [
-  { value: '', label: 'All Sources' },
-  { value: 'cli', label: 'CLI' },
-  { value: 'mcp', label: 'MCP' },
-  { value: 'ui', label: 'Desktop' },
-]
-
 const PAGE_SIZE = 20
 
 export function AuditPage({ onNavigateBack }: AuditPageProps) {
+  const { t } = useTranslation()
+
+  const ACTION_OPTIONS = [
+    { value: '', label: t('audit.allActions') },
+    { value: 'secret.get', label: t('audit.getSecret') },
+    { value: 'secret.set', label: t('audit.setSecret') },
+    { value: 'secret.delete', label: t('audit.deleteSecretAction') },
+    { value: 'secret.list', label: t('audit.listSecrets') },
+    { value: 'auth.unlock', label: t('audit.unlockAction') },
+    { value: 'auth.lock', label: t('audit.lockAction') },
+    { value: 'vault.init', label: t('audit.vaultInit') },
+  ]
+
+  const SOURCE_OPTIONS = [
+    { value: '', label: t('audit.allSources') },
+    { value: 'cli', label: t('audit.cli') },
+    { value: 'mcp', label: t('audit.mcp') },
+    { value: 'ui', label: t('audit.desktop') },
+  ]
   const [logs, setLogs] = useState<main.AuditLogEntry[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [currentPage, setCurrentPage] = useState(0)
@@ -169,7 +171,7 @@ export function AuditPage({ onNavigateBack }: AuditPageProps) {
             <Button variant="ghost" size="icon" onClick={onNavigateBack} data-testid="back-button">
               <ChevronLeft className="w-5 h-5" />
             </Button>
-            <h1 className="text-xl font-semibold">Audit Log</h1>
+            <h1 className="text-xl font-semibold">{t('audit.title')}</h1>
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -180,7 +182,7 @@ export function AuditPage({ onNavigateBack }: AuditPageProps) {
               data-testid="verify-chain-button"
             >
               <RefreshCw className={`w-4 h-4 mr-2 ${isVerifying ? 'animate-spin' : ''}`} />
-              Verify Chain
+              {t('audit.verifyChain')}
             </Button>
             <Button variant="outline" size="sm" onClick={exportToCSV} data-testid="export-csv-button">
               <Download className="w-4 h-4 mr-2" />
@@ -199,23 +201,23 @@ export function AuditPage({ onNavigateBack }: AuditPageProps) {
             {verificationStatus === null ? (
               <>
                 <AlertCircle className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Checking chain integrity...</span>
+                <span className="text-sm text-muted-foreground">{t('audit.checkingChain')}</span>
               </>
             ) : verificationStatus ? (
               <>
                 <CheckCircle className="w-4 h-4 text-green-500" />
-                <span className="text-sm text-green-500">Chain Verified</span>
+                <span className="text-sm text-green-500">{t('audit.chainVerified')}</span>
               </>
             ) : (
               <>
                 <XCircle className="w-4 h-4 text-destructive" />
-                <span className="text-sm text-destructive">Chain Invalid</span>
+                <span className="text-sm text-destructive">{t('audit.chainInvalid')}</span>
               </>
             )}
           </div>
           {stats && (
             <div className="text-sm text-muted-foreground">
-              Total: {stats.total} | Success: {stats.success} | Failure: {stats.failure}
+              {t('audit.total')}: {stats.total} | {t('common.success')}: {stats.success} | {t('common.failure')}: {stats.failure}
             </div>
           )}
         </div>
@@ -279,10 +281,10 @@ export function AuditPage({ onNavigateBack }: AuditPageProps) {
           </div>
 
           <Button size="sm" onClick={handleFilter} data-testid="apply-filter-button">
-            Apply
+            {t('common.apply')}
           </Button>
           <Button size="sm" variant="ghost" onClick={handleClearFilters} data-testid="clear-filter-button">
-            Clear
+            {t('common.clear')}
           </Button>
         </div>
       </div>
@@ -293,24 +295,24 @@ export function AuditPage({ onNavigateBack }: AuditPageProps) {
           <table className="w-full text-sm">
             <thead className="bg-muted/50">
               <tr>
-                <th className="text-left p-3 font-medium">Timestamp</th>
-                <th className="text-left p-3 font-medium">Action</th>
-                <th className="text-left p-3 font-medium">Source</th>
-                <th className="text-left p-3 font-medium">Key</th>
-                <th className="text-left p-3 font-medium">Status</th>
+                <th className="text-left p-3 font-medium">{t('audit.timestamp')}</th>
+                <th className="text-left p-3 font-medium">{t('audit.action')}</th>
+                <th className="text-left p-3 font-medium">{t('audit.source')}</th>
+                <th className="text-left p-3 font-medium">{t('secrets.key')}</th>
+                <th className="text-left p-3 font-medium">{t('audit.status')}</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
                   <td colSpan={5} className="p-8 text-center text-muted-foreground">
-                    Loading...
+                    {t('common.loading')}
                   </td>
                 </tr>
               ) : logs.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="p-8 text-center text-muted-foreground">
-                    No audit logs found
+                    {t('audit.noLogsFound')}
                   </td>
                 </tr>
               ) : (
@@ -351,7 +353,7 @@ export function AuditPage({ onNavigateBack }: AuditPageProps) {
       {/* Pagination */}
       <div className="border-t border-border p-4 flex items-center justify-between">
         <div className="text-sm text-muted-foreground">
-          Showing {currentPage * PAGE_SIZE + 1}-{Math.min((currentPage + 1) * PAGE_SIZE, totalCount)} of {totalCount}
+          {t('audit.showing', { start: currentPage * PAGE_SIZE + 1, end: Math.min((currentPage + 1) * PAGE_SIZE, totalCount), total: totalCount })}
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -362,10 +364,10 @@ export function AuditPage({ onNavigateBack }: AuditPageProps) {
             data-testid="prev-page-button"
           >
             <ChevronLeft className="w-4 h-4" />
-            Prev
+            {t('common.prev')}
           </Button>
           <span className="text-sm">
-            Page {currentPage + 1} of {totalPages || 1}
+            {t('audit.page', { current: currentPage + 1, total: totalPages || 1 })}
           </span>
           <Button
             variant="outline"
@@ -374,7 +376,7 @@ export function AuditPage({ onNavigateBack }: AuditPageProps) {
             disabled={currentPage >= totalPages - 1}
             data-testid="next-page-button"
           >
-            Next
+            {t('common.next')}
             <ChevronRight className="w-4 h-4" />
           </Button>
         </div>
@@ -390,7 +392,7 @@ export function AuditPage({ onNavigateBack }: AuditPageProps) {
           <Card className="w-full max-w-lg mx-4" onClick={e => e.stopPropagation()}>
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
-                <span>Audit Log Detail</span>
+                <span>{t('audit.auditLogDetail')}</span>
                 <Button variant="ghost" size="sm" onClick={() => setSelectedLog(null)}>
                   &times;
                 </Button>
@@ -398,40 +400,40 @@ export function AuditPage({ onNavigateBack }: AuditPageProps) {
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <label className="text-sm font-medium text-muted-foreground">Timestamp</label>
+                <label className="text-sm font-medium text-muted-foreground">{t('audit.timestamp')}</label>
                 <p className="font-mono text-sm">{formatTimestamp(selectedLog.timestamp)}</p>
               </div>
               <div>
-                <label className="text-sm font-medium text-muted-foreground">Action</label>
+                <label className="text-sm font-medium text-muted-foreground">{t('audit.action')}</label>
                 <p>{selectedLog.action}</p>
               </div>
               <div>
-                <label className="text-sm font-medium text-muted-foreground">Source</label>
+                <label className="text-sm font-medium text-muted-foreground">{t('audit.source')}</label>
                 <p>{selectedLog.source}</p>
               </div>
               <div>
-                <label className="text-sm font-medium text-muted-foreground">Key</label>
+                <label className="text-sm font-medium text-muted-foreground">{t('secrets.key')}</label>
                 <p className="font-mono text-sm">{selectedLog.key || '-'}</p>
               </div>
               <div>
-                <label className="text-sm font-medium text-muted-foreground">Status</label>
+                <label className="text-sm font-medium text-muted-foreground">{t('audit.status')}</label>
                 <div className="flex items-center gap-2">
                   {selectedLog.success ? (
                     <>
                       <CheckCircle className="w-4 h-4 text-green-500" />
-                      <span className="text-green-500">Success</span>
+                      <span className="text-green-500">{t('common.success')}</span>
                     </>
                   ) : (
                     <>
                       <XCircle className="w-4 h-4 text-destructive" />
-                      <span className="text-destructive">Failure</span>
+                      <span className="text-destructive">{t('common.failure')}</span>
                     </>
                   )}
                 </div>
               </div>
               {selectedLog.error && (
                 <div>
-                  <label className="text-sm font-medium text-muted-foreground">Error</label>
+                  <label className="text-sm font-medium text-muted-foreground">{t('common.error')}</label>
                   <p className="text-sm text-destructive">{selectedLog.error}</p>
                 </div>
               )}

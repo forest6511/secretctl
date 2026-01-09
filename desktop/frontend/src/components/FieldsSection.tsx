@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { FieldEditor, FieldDTO, InputType } from './FieldEditor'
 
 export type { FieldDTO, InputType }
@@ -21,13 +22,14 @@ export function FieldsSection({
   onFieldSensitiveToggle,
   onFieldDelete
 }: FieldsSectionProps) {
+  const { t } = useTranslation()
   // Use fieldOrder if available, otherwise fallback to object keys
   const orderedFieldNames = fieldOrder.length > 0 ? fieldOrder : Object.keys(fields)
 
   if (orderedFieldNames.length === 0) {
     return (
       <div className="text-sm text-muted-foreground italic">
-        No fields defined
+        {t('secrets.noFieldsDefined')}
       </div>
     )
   }
