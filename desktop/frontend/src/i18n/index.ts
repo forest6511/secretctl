@@ -5,6 +5,7 @@ import ja from './locales/ja.json'
 
 // Get system language or default to English
 const getDefaultLanguage = () => {
+  if (typeof navigator === 'undefined') return 'en'
   const lang = navigator.language.split('-')[0]
   return lang === 'ja' ? 'ja' : 'en'
 }
