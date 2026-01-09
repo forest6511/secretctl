@@ -24,7 +24,19 @@ const config: Config = {
 
   i18n: {
     defaultLocale: 'en',
-    locales: ['en'],
+    locales: ['en', 'ja'],
+    localeConfigs: {
+      en: {
+        label: 'English',
+        direction: 'ltr',
+        htmlLang: 'en-US',
+      },
+      ja: {
+        label: '日本語',
+        direction: 'ltr',
+        htmlLang: 'ja',
+      },
+    },
   },
 
   // Analytics (Plausible - privacy-friendly)
@@ -101,6 +113,10 @@ const config: Config = {
         {
           href: 'https://github.com/forest6511/secretctl',
           label: 'GitHub',
+          position: 'right',
+        },
+        {
+          type: 'localeDropdown',
           position: 'right',
         },
       ],

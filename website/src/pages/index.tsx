@@ -4,6 +4,7 @@ import Link from '@docusaurus/Link';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Layout from '@theme/Layout';
 import Heading from '@theme/Heading';
+import Translate, {translate} from '@docusaurus/Translate';
 
 import styles from './index.module.css';
 
@@ -15,12 +16,18 @@ function HomepageHeader() {
         <Heading as="h1" className="hero__title">
           {siteConfig.title}
         </Heading>
-        <p className="hero__subtitle">{siteConfig.tagline}</p>
+        <p className="hero__subtitle">
+          <Translate id="homepage.tagline" description="The tagline on the homepage">
+            The simplest AI-ready secrets manager
+          </Translate>
+        </p>
         <div className={styles.buttons}>
           <Link
             className="button button--secondary button--lg"
             to="/docs/getting-started">
-            Get Started
+            <Translate id="homepage.getStarted" description="Get Started button on homepage">
+              Get Started
+            </Translate>
           </Link>
           <Link
             className="button button--outline button--secondary button--lg"
@@ -42,33 +49,51 @@ type FeatureItem = {
 
 const FeatureList: FeatureItem[] = [
   {
-    title: 'Local-First',
+    title: translate({
+      id: 'homepage.features.localFirst.title',
+      message: 'Local-First',
+      description: 'Title for Local-First feature',
+    }),
     emoji: '🏠',
     description: (
-      <>
+      <Translate
+        id="homepage.features.localFirst.description"
+        description="Description for Local-First feature">
         Your secrets never leave your machine. No cloud accounts, no external
         services, no network requests. Just a single encrypted SQLite database.
-      </>
+      </Translate>
     ),
   },
   {
-    title: 'AI-Ready (MCP)',
+    title: translate({
+      id: 'homepage.features.aiReady.title',
+      message: 'AI-Ready (MCP)',
+      description: 'Title for AI-Ready feature',
+    }),
     emoji: '🤖',
     description: (
-      <>
+      <Translate
+        id="homepage.features.aiReady.description"
+        description="Description for AI-Ready feature">
         Built-in MCP server for secure AI agent integration. Use with Claude Code
         and other AI tools while keeping your secrets safe with AI-Safe Access.
-      </>
+      </Translate>
     ),
   },
   {
-    title: 'Single Binary',
+    title: translate({
+      id: 'homepage.features.singleBinary.title',
+      message: 'Single Binary',
+      description: 'Title for Single Binary feature',
+    }),
     emoji: '📦',
     description: (
-      <>
+      <Translate
+        id="homepage.features.singleBinary.description"
+        description="Description for Single Binary feature">
         Download one file and you're ready to go. No dependencies, no runtime
         requirements. Works on macOS, Linux, and Windows.
-      </>
+      </Translate>
     ),
   },
 ];
@@ -106,7 +131,9 @@ function QuickInstall(): ReactNode {
     <section className={styles.quickInstall}>
       <div className="container">
         <Heading as="h2" className="text--center">
-          Quick Install
+          <Translate id="homepage.quickInstall.title" description="Quick Install section title">
+            Quick Install
+          </Translate>
         </Heading>
         <div className={styles.codeBlock}>
           <code>
@@ -118,7 +145,9 @@ function QuickInstall(): ReactNode {
         </div>
         <p className="text--center">
           <Link to="/docs/getting-started/installation">
-            See all installation options →
+            <Translate id="homepage.quickInstall.seeAll" description="Link to see all installation options">
+              See all installation options →
+            </Translate>
           </Link>
         </p>
       </div>
@@ -130,8 +159,16 @@ export default function Home(): ReactNode {
   const {siteConfig} = useDocusaurusContext();
   return (
     <Layout
-      title="Home"
-      description="The simplest AI-ready secrets manager. Local-first, single-binary, with MCP support for AI agents.">
+      title={translate({
+        id: 'homepage.title',
+        message: 'Home',
+        description: 'Homepage title',
+      })}
+      description={translate({
+        id: 'homepage.description',
+        message: 'The simplest AI-ready secrets manager. Local-first, single-binary, with MCP support for AI agents.',
+        description: 'Homepage meta description',
+      })}>
       <HomepageHeader />
       <main>
         <HomepageFeatures />

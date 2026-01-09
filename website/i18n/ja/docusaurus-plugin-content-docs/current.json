@@ -1,0 +1,54 @@
+{
+  "version.label": {
+    "message": "最新",
+    "description": "The label for version current"
+  },
+  "sidebar.docs.category.Getting Started": {
+    "message": "はじめに",
+    "description": "The label for category 'Getting Started' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Use Cases": {
+    "message": "活用事例",
+    "description": "The label for category 'Use Cases' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.User Guides": {
+    "message": "ユーザーガイド",
+    "description": "The label for category 'User Guides' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.CLI Guide": {
+    "message": "CLI ガイド",
+    "description": "The label for category 'CLI Guide' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Desktop App": {
+    "message": "デスクトップアプリ",
+    "description": "The label for category 'Desktop App' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.MCP Integration": {
+    "message": "MCP 連携",
+    "description": "The label for category 'MCP Integration' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Migration": {
+    "message": "移行ガイド",
+    "description": "The label for category 'Migration' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Reference": {
+    "message": "リファレンス",
+    "description": "The label for category 'Reference' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Security": {
+    "message": "セキュリティ",
+    "description": "The label for category 'Security' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Architecture": {
+    "message": "アーキテクチャ",
+    "description": "The label for category 'Architecture' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Contributing": {
+    "message": "コントリビュート",
+    "description": "The label for category 'Contributing' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Help": {
+    "message": "ヘルプ",
+    "description": "The label for category 'Help' in sidebar 'docs'"
+  }
+}
