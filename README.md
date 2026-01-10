@@ -1,5 +1,14 @@
 # secretctl
 
+<p align="center">
+  <a href="README.md">
+    <img src="https://img.shields.io/badge/🇺🇸_English-blue" alt="English">
+  </a>
+  <a href="README-ja.md">
+    <img src="https://img.shields.io/badge/🇯🇵_日本語-green" alt="日本語">
+  </a>
+</p>
+
 **The simplest AI-ready secrets manager.**
 
 No infrastructure. No subscription. No complexity.
