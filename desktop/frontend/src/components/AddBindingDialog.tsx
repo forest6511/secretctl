@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,6 +23,7 @@ export function AddBindingDialog({
   onAdd,
   onCancel,
 }: AddBindingDialogProps) {
+  const { t } = useTranslation()
   const [envVar, setEnvVar] = useState('')
   const [fieldName, setFieldName] = useState('')
   const [envVarError, setEnvVarError] = useState('')
@@ -53,13 +55,13 @@ export function AddBindingDialog({
 
   const validateEnvVar = (value: string): string | null => {
     if (!value) {
-      return 'Environment variable name is required'
+      return t('bindings.envVarRequired')
     }
     if (!ENV_VAR_REGEX.test(value)) {
       return 'Must be SCREAMING_SNAKE_CASE (uppercase letters, numbers, underscores)'
     }
     if (existingEnvVars.includes(value)) {
-      return 'This environment variable is already bound'
+      return t('bindings.envVarExists')
     }
     return null
   }
@@ -110,18 +112,18 @@ export function AddBindingDialog({
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Link className="w-5 h-5" />
-            Add Environment Binding
+            {t('secrets.addBinding')}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              Environment Variable <span className="text-destructive">*</span>
+              {t('bindings.envVariable')} <span className="text-destructive">*</span>
             </label>
             <Input
               value={envVar}
               onChange={(e) => handleEnvVarChange(e.target.value)}
-              placeholder="e.g. DATABASE_PASSWORD, API_KEY"
+              placeholder={t('bindings.envVariablePlaceholder')}
               className="font-mono"
               data-testid="binding-envvar-input"
               autoFocus
@@ -138,7 +140,7 @@ export function AddBindingDialog({
 
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              Field <span className="text-destructive">*</span>
+              {t('bindings.selectField')} <span className="text-destructive">*</span>
             </label>
             {fieldNames.length === 0 ? (
               <p className="text-sm text-muted-foreground italic">
@@ -171,14 +173,14 @@ export function AddBindingDialog({
               onClick={onCancel}
               data-testid="add-binding-cancel"
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               onClick={handleSubmit}
               disabled={fieldNames.length === 0}
               data-testid="add-binding-confirm"
             >
-              Add Binding
+              {t('secrets.addBinding')}
             </Button>
           </div>
         </CardContent>

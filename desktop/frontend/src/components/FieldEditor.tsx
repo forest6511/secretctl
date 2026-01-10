@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Copy, Eye, EyeOff, Lock, Unlock, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -47,6 +48,7 @@ export function FieldEditor({
   const isTextarea = field.inputType === 'textarea'
   const [isVisible, setIsVisible] = useState(isTextarea)
   const toast = useToast()
+  const { t } = useTranslation()
 
   const handleToggleVisibility = async () => {
     if (field.sensitive && !isVisible) {
@@ -67,10 +69,10 @@ export function FieldEditor({
       // For new secrets, use clipboard API directly
       try {
         await navigator.clipboard.writeText(field.value)
-        toast.success('Copied!')
+        toast.success(t('secrets.copiedMessage'))
       } catch (err) {
         console.error('Failed to copy:', err)
-        toast.error('Failed to copy to clipboard')
+        toast.error(t('secrets.failedToCopy'))
       }
       return
     }
@@ -78,10 +80,10 @@ export function FieldEditor({
     try {
       // Security: Value is fetched server-side to prevent caller manipulation
       await CopyFieldValue(secretKey, fieldName)
-      toast.success('Copied! Auto-clears in 30s')
+      toast.success(t('secrets.copiedMessage'))
     } catch (err) {
       console.error('Failed to copy:', err)
-      toast.error('Failed to copy to clipboard')
+      toast.error(t('secrets.failedToCopy'))
     }
   }
 
@@ -134,10 +136,10 @@ export function FieldEditor({
             size="sm"
             onClick={onSensitiveToggle}
             className="h-6 px-2 text-xs"
-            title={field.sensitive ? 'Mark as non-sensitive' : 'Mark as sensitive'}
+            title={field.sensitive ? t('fields.markNonSensitive') : t('fields.markSensitive')}
             data-testid={`toggle-sensitive-${fieldName}`}
           >
-            {field.sensitive ? 'Unmark sensitive' : 'Mark sensitive'}
+            {field.sensitive ? t('fields.unmarkSensitive') : t('fields.markSensitive')}
           </Button>
         )}
       </div>
@@ -168,7 +170,7 @@ export function FieldEditor({
             variant="ghost"
             size="icon"
             onClick={handleToggleVisibility}
-            title={isVisible ? 'Hide' : 'Show'}
+            title={isVisible ? t('common.hide') : t('common.show')}
             data-testid={`toggle-field-${fieldName}`}
           >
             {isVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -178,7 +180,7 @@ export function FieldEditor({
           variant="ghost"
           size="icon"
           onClick={handleCopy}
-          title="Copy"
+          title={t('common.copy')}
           data-testid={`copy-field-${fieldName}`}
         >
           <Copy className="w-4 h-4" />
@@ -188,7 +190,7 @@ export function FieldEditor({
             variant="ghost"
             size="icon"
             onClick={onDelete}
-            title="Delete field"
+            title={t('secrets.deleteField')}
             className="text-destructive hover:text-destructive"
             data-testid={`delete-field-${fieldName}`}
           >

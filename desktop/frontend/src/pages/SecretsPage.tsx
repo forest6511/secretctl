@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Search, Plus, Copy, Trash2, Eye, EyeOff, Key,
@@ -48,6 +49,7 @@ interface SecretsPageProps {
 }
 
 export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
+  const { t } = useTranslation()
   const [secrets, setSecrets] = useState<main.SecretListItem[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
@@ -429,18 +431,18 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
         {/* Header */}
         <div className="p-4 border-b border-border bg-sky-500 text-white">
           <div className="flex items-center justify-between mb-3">
-            <h1 className="text-lg font-semibold">Secrets</h1>
+            <h1 className="text-lg font-semibold">{t('secrets.title')}</h1>
             <div className="flex gap-1">
-              <Button variant="ghost" size="icon" className="text-white hover:bg-white hover:text-sky-500 hover:rounded" onClick={onNavigateToAudit} title="Audit Log" data-testid="audit-button">
+              <Button variant="ghost" size="icon" className="text-white hover:bg-white hover:text-sky-500 hover:rounded" onClick={onNavigateToAudit} title={t('tooltips.auditLog')} data-testid="audit-button">
                 <ClipboardList className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="icon" className="text-white hover:bg-white hover:text-sky-500 hover:rounded" onClick={loadSecrets} title="Refresh">
+              <Button variant="ghost" size="icon" className="text-white hover:bg-white hover:text-sky-500 hover:rounded" onClick={loadSecrets} title={t('tooltips.refresh')}>
                 <RefreshCw className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="icon" className="text-white hover:bg-white hover:text-sky-500 hover:rounded" onClick={() => setShowChangePasswordDialog(true)} title="Change Password" data-testid="change-password-button">
+              <Button variant="ghost" size="icon" className="text-white hover:bg-white hover:text-sky-500 hover:rounded" onClick={() => setShowChangePasswordDialog(true)} title={t('tooltips.changePassword')} data-testid="change-password-button">
                 <Key className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="icon" className="text-white hover:bg-white hover:text-sky-500 hover:rounded" onClick={handleLock} title="Lock">
+              <Button variant="ghost" size="icon" className="text-white hover:bg-white hover:text-sky-500 hover:rounded" onClick={handleLock} title={t('tooltips.lock')}>
                 <Lock className="w-4 h-4" />
               </Button>
             </div>
@@ -449,7 +451,7 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               ref={searchInputRef}
-              placeholder="Search secrets... (⌘F)"
+              placeholder={t('secrets.searchPlaceholder')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
@@ -474,7 +476,7 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
                 <span className="font-medium truncate">{secret.key}</span>
                 {secret.fieldCount > 0 && (
                   <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                    {secret.fieldCount} {secret.fieldCount === 1 ? 'field' : 'fields'}
+                    {t('secrets.fieldCount', { count: secret.fieldCount })}
                   </span>
                 )}
               </div>
@@ -491,7 +493,7 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
           ))}
           {filteredSecrets.length === 0 && (
             <div className="p-4 text-center text-muted-foreground">
-              {searchQuery ? 'No secrets found' : 'No secrets yet'}
+              {searchQuery ? t('secrets.noSecretsFound') : t('secrets.noSecretsYet')}
             </div>
           )}
         </div>
@@ -500,7 +502,7 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
         <div className="p-4 border-t border-border">
           <Button className="w-full" onClick={handleStartCreate} data-testid="add-secret-button">
             <Plus className="w-4 h-4 mr-2" />
-            Add Secret
+            {t('secrets.addSecret')}
           </Button>
         </div>
       </div>
@@ -510,15 +512,15 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
         {(isCreating || isEditing) ? (
           <Card>
             <CardHeader>
-              <CardTitle>{isCreating ? 'New Secret' : 'Edit Secret'}</CardTitle>
+              <CardTitle>{isCreating ? t('secrets.newSecret') : t('secrets.editSecret')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Key</label>
+                <label className="text-sm font-medium">{t('secrets.key')}</label>
                 <Input
                   value={formKey}
                   onChange={(e) => setFormKey(e.target.value)}
-                  placeholder="e.g., aws/production/api-key"
+                  placeholder={t('secrets.keyPlaceholder')}
                   disabled={isEditing}
                   data-testid="secret-key-input"
                 />
@@ -534,7 +536,7 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
               )}
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium">Fields</label>
+                  <label className="text-sm font-medium">{t('secrets.fields')}</label>
                   <Button
                     variant="outline"
                     size="sm"
@@ -542,7 +544,7 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
                     data-testid="add-field-button"
                   >
                     <Plus className="w-4 h-4 mr-1" />
-                    Add Field
+                    {t('secrets.addField')}
                   </Button>
                 </div>
                 <FieldsSection
@@ -557,7 +559,7 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
               </div>
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium">Environment Bindings</label>
+                  <label className="text-sm font-medium">{t('secrets.environmentBindings')}</label>
                   <Button
                     variant="outline"
                     size="sm"
@@ -566,7 +568,7 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
                     data-testid="add-binding-button"
                   >
                     <Plus className="w-4 h-4 mr-1" />
-                    Add Binding
+                    {t('secrets.addBinding')}
                   </Button>
                 </div>
                 <BindingsSection
@@ -577,39 +579,39 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">URL (optional)</label>
+                <label className="text-sm font-medium">{t('secrets.urlOptional')}</label>
                 <Input
                   value={formUrl}
                   onChange={(e) => setFormUrl(e.target.value)}
-                  placeholder="https://example.com"
+                  placeholder={t('secrets.urlPlaceholder')}
                   data-testid="secret-url-input"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Tags (comma-separated)</label>
+                <label className="text-sm font-medium">{t('secrets.tagsLabel')}</label>
                 <Input
                   value={formTags}
                   onChange={(e) => setFormTags(e.target.value)}
-                  placeholder="production, aws, api"
+                  placeholder={t('secrets.tagsPlaceholder')}
                   data-testid="secret-tags-input"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Notes (optional)</label>
+                <label className="text-sm font-medium">{t('secrets.notesOptional')}</label>
                 <textarea
                   value={formNotes}
                   onChange={(e) => setFormNotes(e.target.value)}
-                  placeholder="Additional notes..."
+                  placeholder={t('secrets.notesPlaceholder')}
                   className="w-full min-h-[100px] rounded-md border border-border bg-transparent px-3 py-2 text-sm"
                   data-testid="secret-notes-input"
                 />
               </div>
               <div className="flex gap-2 pt-4">
                 <Button onClick={handleSave} data-testid="save-secret-button">
-                  {isCreating ? 'Create' : 'Save'}
+                  {isCreating ? t('common.create') : t('common.save')}
                 </Button>
                 <Button variant="outline" onClick={handleCancel} data-testid="cancel-button">
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
               </div>
             </CardContent>
@@ -623,10 +625,10 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
                   {selectedSecret.key}
                 </CardTitle>
                 <div className="flex gap-1">
-                  <Button variant="ghost" size="icon" onClick={handleStartEdit} title="Edit" data-testid="edit-secret-button">
+                  <Button variant="ghost" size="icon" onClick={handleStartEdit} title={t('common.edit')} data-testid="edit-secret-button">
                     <FileText className="w-4 h-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={handleDeleteClick} title="Delete" data-testid="delete-secret-button">
+                  <Button variant="ghost" size="icon" onClick={handleDeleteClick} title={t('common.delete')} data-testid="delete-secret-button">
                     <Trash2 className="w-4 h-4 text-destructive" />
                   </Button>
                 </div>
@@ -644,7 +646,7 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
               ) : selectedSecret.value ? (
                 // Legacy single value fallback
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-muted-foreground">Value</label>
+                  <label className="text-sm font-medium text-muted-foreground">{t('secrets.value')}</label>
                   <div className="flex items-center gap-2">
                     <Input
                       type={showValue ? 'text' : 'password'}
@@ -657,7 +659,7 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
                       variant="ghost"
                       size="icon"
                       onClick={() => setShowValue(!showValue)}
-                      title={showValue ? 'Hide' : 'Show'}
+                      title={showValue ? t('common.hide') : t('common.show')}
                       data-testid="toggle-value-visibility"
                     >
                       {showValue ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -666,7 +668,7 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
                       variant="ghost"
                       size="icon"
                       onClick={handleCopy}
-                      title="Copy (⌘C)"
+                      title={t('tooltips.copySecret')}
                       data-testid="copy-secret-button"
                     >
                       <Copy className="w-4 h-4" />
@@ -680,7 +682,7 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-muted-foreground flex items-center gap-1">
                     <ExternalLink className="w-3 h-3" />
-                    URL
+                    {t('secrets.url')}
                   </label>
                   <a
                     href={selectedSecret.url}
@@ -698,7 +700,7 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-muted-foreground flex items-center gap-1">
                     <Tag className="w-3 h-3" />
-                    Tags
+                    {t('secrets.tags')}
                   </label>
                   <div className="flex gap-1 flex-wrap">
                     {selectedSecret.tags.map((tag) => (
@@ -715,7 +717,7 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-muted-foreground flex items-center gap-1">
                     <FileText className="w-3 h-3" />
-                    Notes
+                    {t('secrets.notes')}
                   </label>
                   <p className="text-sm whitespace-pre-wrap">{selectedSecret.notes}</p>
                 </div>
@@ -723,14 +725,14 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
 
               {/* Metadata */}
               <div className="pt-4 border-t border-border text-xs text-muted-foreground space-y-1">
-                <p>Created: {formatDate(selectedSecret.createdAt)}</p>
-                <p>Updated: {formatDate(selectedSecret.updatedAt)}</p>
+                <p>{t('secrets.created')}: {formatDate(selectedSecret.createdAt)}</p>
+                <p>{t('secrets.updated')}: {formatDate(selectedSecret.updatedAt)}</p>
               </div>
             </CardContent>
           </Card>
         ) : (
           <div className="flex items-center justify-center h-full text-muted-foreground">
-            Select a secret or create a new one
+            {t('secrets.selectOrCreate')}
           </div>
         )}
       </div>
@@ -738,10 +740,10 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
       {/* Delete Confirmation Dialog */}
       <ConfirmDialog
         open={deleteDialogOpen}
-        title="Delete Secret"
-        message={`Are you sure you want to delete "${selectedKey}"? This action cannot be undone.`}
-        confirmLabel="Delete"
-        cancelLabel="Cancel"
+        title={t('secrets.deleteSecret')}
+        message={t('secrets.deleteSecretConfirmWithKey', { key: selectedKey })}
+        confirmLabel={t('common.delete')}
+        cancelLabel={t('common.cancel')}
         variant="destructive"
         onConfirm={handleDeleteConfirm}
         onCancel={() => setDeleteDialogOpen(false)}
@@ -772,10 +774,10 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
       {/* Confirm Field Delete Dialog */}
       <ConfirmDialog
         open={fieldToDelete !== null}
-        title="Delete Field"
-        message={`Are you sure you want to delete the field "${fieldToDelete}"? This action cannot be undone.`}
-        confirmLabel="Delete"
-        cancelLabel="Cancel"
+        title={t('secrets.deleteField')}
+        message={t('secrets.deleteFieldConfirmWithName', { field: fieldToDelete })}
+        confirmLabel={t('common.delete')}
+        cancelLabel={t('common.cancel')}
         variant="destructive"
         onConfirm={confirmFieldDelete}
         onCancel={() => setFieldToDelete(null)}

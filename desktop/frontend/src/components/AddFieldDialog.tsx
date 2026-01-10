@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Plus, Type, AlignLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,6 +23,7 @@ export function AddFieldDialog({
   onAdd,
   onCancel,
 }: AddFieldDialogProps) {
+  const { t } = useTranslation()
   const [name, setName] = useState('')
   const [value, setValue] = useState('')
   const [sensitive, setSensitive] = useState(false)
@@ -55,7 +57,7 @@ export function AddFieldDialog({
 
   const validateName = (fieldName: string): string | null => {
     if (!fieldName) {
-      return 'Field name is required'
+      return t('fields.nameRequired')
     }
     if (fieldName.length > 64) {
       return 'Field name must be 64 characters or less'
@@ -64,7 +66,7 @@ export function AddFieldDialog({
       return 'Field name must be lowercase letters, numbers, and underscores (snake_case)'
     }
     if (existingFieldNames.includes(fieldName)) {
-      return 'A field with this name already exists'
+      return t('fields.nameExists')
     }
     return null
   }
@@ -101,18 +103,18 @@ export function AddFieldDialog({
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Plus className="w-5 h-5" />
-            Add Field
+            {t('secrets.addField')}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              Field Name <span className="text-destructive">*</span>
+              {t('fields.fieldName')} <span className="text-destructive">*</span>
             </label>
             <Input
               value={name}
               onChange={(e) => handleNameChange(e.target.value)}
-              placeholder="e.g. username, api_key, password"
+              placeholder={t('fields.fieldNamePlaceholder')}
               data-testid="field-name-input"
               autoFocus
             />
@@ -128,7 +130,7 @@ export function AddFieldDialog({
 
           {/* Input Type Selection */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">Field Type</label>
+            <label className="text-sm font-medium">{t('fields.inputType')}</label>
             <div className="flex gap-2">
               <button
                 type="button"
@@ -141,7 +143,7 @@ export function AddFieldDialog({
                 data-testid="input-type-text"
               >
                 <Type className="w-4 h-4" />
-                <span className="text-sm font-medium">Single Line</span>
+                <span className="text-sm font-medium">{ t('fields.text') }</span>
               </button>
               <button
                 type="button"
@@ -154,24 +156,24 @@ export function AddFieldDialog({
                 data-testid="input-type-textarea"
               >
                 <AlignLeft className="w-4 h-4" />
-                <span className="text-sm font-medium">Multi-line</span>
+                <span className="text-sm font-medium">{ t('fields.textarea') }</span>
               </button>
             </div>
             <p className="text-xs text-muted-foreground">
               {inputType === 'text'
-                ? 'For passwords, API keys, usernames, etc.'
-                : 'For SSH keys, certificates, JSON, etc.'}
+                ?  t('fields.textHint')
+                :  t('fields.textareaHint')}
             </p>
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Value</label>
+            <label className="text-sm font-medium">{t('fields.fieldValue')}</label>
             {inputType === 'text' ? (
               <Input
                 type={sensitive ? 'password' : 'text'}
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
-                placeholder="Enter field value"
+                placeholder={t('fields.fieldValuePlaceholder')}
                 className="font-mono"
                 data-testid="field-value-input"
               />
@@ -179,7 +181,7 @@ export function AddFieldDialog({
               <Textarea
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
-                placeholder="Enter multi-line value (SSH key, certificate, etc.)"
+                placeholder={t('fields.fieldValuePlaceholder')}
                 className="font-mono min-h-[120px]"
                 data-testid="field-value-input"
               />
@@ -196,7 +198,7 @@ export function AddFieldDialog({
               data-testid="field-sensitive-checkbox"
             />
             <label htmlFor="sensitive-checkbox" className="text-sm">
-              Sensitive field (will be masked by default)
+              {t('fields.sensitive')}
             </label>
           </div>
 
@@ -206,13 +208,13 @@ export function AddFieldDialog({
               onClick={onCancel}
               data-testid="add-field-cancel"
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               onClick={handleSubmit}
               data-testid="add-field-confirm"
             >
-              Add Field
+              {t('secrets.addField')}
             </Button>
           </div>
         </CardContent>

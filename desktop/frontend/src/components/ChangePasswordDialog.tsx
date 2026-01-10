@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Key, AlertTriangle, CheckCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,6 +24,8 @@ export function ChangePasswordDialog({
   onClose,
   onSuccess,
 }: ChangePasswordDialogProps) {
+  const { t } = useTranslation()
+
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -64,23 +67,23 @@ export function ChangePasswordDialog({
 
     // Validate inputs
     if (!currentPassword) {
-      setError('Current password is required')
+      setError(t('changePassword.currentRequired'))
       return
     }
     if (!newPassword) {
-      setError('New password is required')
+      setError(t('changePassword.newRequired'))
       return
     }
     if (!confirmPassword) {
-      setError('Please confirm the new password')
+      setError(t('changePassword.confirmRequired'))
       return
     }
     if (newPassword !== confirmPassword) {
-      setError('New passwords do not match')
+      setError(t('changePassword.newDoNotMatch'))
       return
     }
     if (currentPassword === newPassword) {
-      setError('New password must be different from current password')
+      setError(t('changePassword.mustBeDifferent'))
       return
     }
 
@@ -125,17 +128,16 @@ export function ChangePasswordDialog({
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Key className="w-5 h-5" />
-            Change Master Password
+            {t('changePassword.title')}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {success ? (
             <div className="flex flex-col items-center py-6 space-y-4">
               <CheckCircle className="w-12 h-12 text-green-500" />
-              <p className="text-lg font-medium">Password Changed Successfully</p>
+              <p className="text-lg font-medium">{t('changePassword.successTitle')}</p>
               <p className="text-sm text-muted-foreground text-center">
-                Your vault is now protected with the new password.
-                A backup was created before the change.
+                {t('changePassword.successMessage')}
               </p>
             </div>
           ) : (
@@ -151,13 +153,13 @@ export function ChangePasswordDialog({
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">
-                  Current Password <span className="text-destructive">*</span>
+                  {t('changePassword.currentPassword')} <span className="text-destructive">*</span>
                 </label>
                 <Input
                   type="password"
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
-                  placeholder="Enter current password"
+                  placeholder={t('changePassword.currentPasswordPlaceholder')}
                   disabled={loading}
                   data-testid="current-password-input"
                   autoFocus
@@ -166,30 +168,30 @@ export function ChangePasswordDialog({
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">
-                  New Password <span className="text-destructive">*</span>
+                  {t('changePassword.newPassword')} <span className="text-destructive">*</span>
                 </label>
                 <Input
                   type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Enter new password"
+                  placeholder={t('changePassword.newPasswordPlaceholder')}
                   disabled={loading}
                   data-testid="new-password-input"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Minimum 8 characters. Use a mix of letters, numbers, and symbols.
+                  {t('changePassword.newPasswordHint')}
                 </p>
               </div>
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">
-                  Confirm New Password <span className="text-destructive">*</span>
+                  {t('changePassword.confirmNewPassword')} <span className="text-destructive">*</span>
                 </label>
                 <Input
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Confirm new password"
+                  placeholder={t('changePassword.confirmNewPasswordPlaceholder')}
                   disabled={loading}
                   data-testid="confirm-password-input"
                 />
@@ -202,14 +204,14 @@ export function ChangePasswordDialog({
                   disabled={loading}
                   data-testid="change-password-cancel"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 <Button
                   onClick={handleSubmit}
                   disabled={loading}
                   data-testid="change-password-confirm"
                 >
-                  {loading ? 'Changing...' : 'Change Password'}
+                  {loading ? t('changePassword.changing') : t('changePassword.changePassword')}
                 </Button>
               </div>
             </>

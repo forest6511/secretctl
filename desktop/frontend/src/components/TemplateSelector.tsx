@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+
 import { Key, Database, Globe, Terminal, Lock, Unlock, Link } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { main } from '../../wailsjs/go/models'
@@ -16,19 +18,20 @@ const iconMap: Record<string, JSX.Element> = {
 }
 
 export function TemplateSelector({ templates, selectedTemplate, onSelect }: TemplateSelectorProps) {
+  const { t } = useTranslation()
   const selectedTemplateData = templates.find(t => t.id === selectedTemplate)
 
   if (templates.length === 0) {
     return (
       <div className="text-center text-muted-foreground py-4">
-        Loading templates...
+        {t('common.loading')}
       </div>
     )
   }
 
   return (
     <div className="space-y-4" data-testid="template-selector">
-      <label className="text-sm font-medium">Select Template (Optional)</label>
+      <label className="text-sm font-medium">{t('templates.selectTemplate')}</label>
 
       <div className="grid grid-cols-4 gap-3">
         {templates.map((template) => (
@@ -61,7 +64,7 @@ export function TemplateSelector({ templates, selectedTemplate, onSelect }: Temp
           </div>
 
           <div className="space-y-2">
-            <div className="text-sm font-medium">Fields:</div>
+            <div className="text-sm font-medium">{t('secrets.fields')}:</div>
             <div className="flex flex-wrap gap-2">
               {selectedTemplateData.fields.map((field) => (
                 <div

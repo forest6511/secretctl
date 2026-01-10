@@ -1,0 +1,38 @@
+{
+  "link.title.Docs": {
+    "message": "ドキュメント",
+    "description": "The title of the footer links column with title=Docs in the footer"
+  },
+  "link.title.Community": {
+    "message": "コミュニティ",
+    "description": "The title of the footer links column with title=Community in the footer"
+  },
+  "link.item.label.Getting Started": {
+    "message": "はじめに",
+    "description": "The label of footer link with label=Getting Started linking to /docs/getting-started/"
+  },
+  "link.item.label.CLI Guide": {
+    "message": "CLI ガイド",
+    "description": "The label of footer link with label=CLI Guide linking to /docs/guides/cli/"
+  },
+  "link.item.label.MCP Integration": {
+    "message": "MCP 連携",
+    "description": "The label of footer link with label=MCP Integration linking to /docs/guides/mcp/"
+  },
+  "link.item.label.GitHub": {
+    "message": "GitHub",
+    "description": "The label of footer link with label=GitHub linking to https://github.com/forest6511/secretctl"
+  },
+  "link.item.label.Issues": {
+    "message": "Issues",
+    "description": "The label of footer link with label=Issues linking to https://github.com/forest6511/secretctl/issues"
+  },
+  "link.item.label.Discussions": {
+    "message": "Discussions",
+    "description": "The label of footer link with label=Discussions linking to https://github.com/forest6511/secretctl/discussions"
+  },
+  "copyright": {
+    "message": "Copyright 2026 secretctl contributors.",
+    "description": "The footer copyright"
+  }
+}
