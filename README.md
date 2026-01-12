@@ -9,9 +9,11 @@
   </a>
 </p>
 
-**The simplest AI-ready secrets manager.**
+**Stop pasting API keys into AI chat.**
 
-No infrastructure. No subscription. No complexity.
+When you paste `sk-proj-xxx` into Claude Code, that secret is now in your conversation history, Anthropic's logs, and potentially exposed to prompt injection attacks.
+
+secretctl fixes this. Your AI gets command results, never secret values.
 
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -22,14 +24,30 @@ No infrastructure. No subscription. No complexity.
 
 ---
 
-## Why secretctl?
+## The Problem
 
-Managing secrets shouldn't require a PhD in DevOps. secretctl is a local-first secrets manager that:
+Every day, developers paste secrets into AI coding assistants:
 
-- **Just works** — Single binary, no servers, no configuration files
-- **Stays local** — Your secrets never leave your machine
-- **Plays nice with AI** — Designed for the age of AI coding assistants (MCP-ready)
-- **Respects your workflow** — CLI-first with Desktop App
+```
+You: "Help me debug this AWS error"
+You: "Here's my config: AWS_ACCESS_KEY_ID=AKIA..."
+```
+
+**This is a security incident waiting to happen.**
+
+- Secrets in conversation history
+- Secrets in cloud logs
+- Secrets exposed to prompt injection
+- No way to rotate or revoke
+
+## The Solution
+
+secretctl injects secrets as environment variables. Your AI runs commands and sees results, but **never sees the actual credentials**.
+
+- **Single binary** — No servers, no configuration, no subscription
+- **Local-first** — Secrets never leave your machine
+- **MCP integration** — Works with Claude Code out of the box
+- **Defense in depth** — AES-256-GCM + Argon2id + output sanitization
 
 ```
 # That's it. You're done.
