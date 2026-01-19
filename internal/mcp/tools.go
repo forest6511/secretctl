@@ -3,6 +3,7 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -29,6 +30,7 @@ import (
 type SecretListInput struct {
 	Tag            string `json:"tag,omitempty"`
 	ExpiringWithin string `json:"expiring_within,omitempty"`
+	FolderID       string `json:"folder_id,omitempty"` // Phase 2c-X2: Filter by folder
 }
 
 // SecretListOutput represents output for secret_list tool.
@@ -46,6 +48,8 @@ type SecretInfo struct {
 	HasURL     bool     `json:"has_url"`
 	CreatedAt  string   `json:"created_at"`
 	UpdatedAt  string   `json:"updated_at"`
+	FolderID   string   `json:"folder_id,omitempty"`   // Phase 2c-X2: Folder UUID
+	FolderPath string   `json:"folder_path,omitempty"` // Phase 2c-X2: Computed path for display
 }
 
 // SecretExistsInput represents input for secret_exists tool.
@@ -193,6 +197,13 @@ func (s *Server) handleSecretList(_ context.Context, _ *mcp.CallToolRequest, inp
 	var err error
 
 	switch {
+	case input.FolderID != "":
+		// Filter by folder (Phase 2c-X2)
+		entries, err = s.vault.ListSecretsInFolder(&input.FolderID, false)
+		if err != nil {
+			_ = s.vault.Audit().LogError(audit.OpSecretList, audit.SourceMCP, "", "LIST_FAILED", err.Error())
+			return nil, SecretListOutput{}, fmt.Errorf("failed to list secrets in folder: %w", err)
+		}
 	case input.Tag != "":
 		// Filter by tag
 		entries, err = s.vault.ListSecretsByTag(input.Tag)
@@ -239,6 +250,14 @@ func (s *Server) handleSecretList(_ context.Context, _ *mcp.CallToolRequest, inp
 		}
 		if entry.ExpiresAt != nil {
 			info.ExpiresAt = entry.ExpiresAt.Format(time.RFC3339)
+		}
+		// Phase 2c-X2: Include folder information
+		if entry.FolderID != nil {
+			info.FolderID = *entry.FolderID
+			folder, folderErr := s.vault.GetFolder(*entry.FolderID)
+			if folderErr == nil {
+				info.FolderPath = s.computeFolderPath(folder)
+			}
 		}
 		output.Secrets = append(output.Secrets, info)
 	}
@@ -1357,4 +1376,196 @@ func (s *Server) handleSecurityScore(_ context.Context, _ *mcp.CallToolRequest, 
 	}
 
 	return nil, output, nil
+}
+
+// ========================================
+// Phase 2c-X2: Folder MCP Tools
+// ========================================
+
+// FolderListInput for folder_list tool.
+type FolderListInput struct {
+	ParentID string `json:"parent_id,omitempty"` // Filter by parent folder (nil for root folders)
+}
+
+// FolderListOutput for folder_list tool.
+type FolderListOutput struct {
+	Folders []FolderInfo `json:"folders"`
+}
+
+// FolderInfo represents folder metadata for MCP responses.
+type FolderInfo struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	ParentID       string `json:"parent_id,omitempty"`
+	Path           string `json:"path"`
+	Icon           string `json:"icon,omitempty"`
+	Color          string `json:"color,omitempty"`
+	SortOrder      int    `json:"sort_order"`
+	SecretCount    int    `json:"secret_count"`
+	SubfolderCount int    `json:"subfolder_count"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
+}
+
+// FolderCreateInput for folder_create tool.
+type FolderCreateInput struct {
+	Name     string `json:"name"`                // Required, no "/" allowed
+	ParentID string `json:"parent_id,omitempty"` // Optional parent folder UUID
+	Icon     string `json:"icon,omitempty"`
+	Color    string `json:"color,omitempty"`
+}
+
+// FolderCreateOutput for folder_create tool.
+type FolderCreateOutput struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+// FolderMoveSecretInput for folder_move_secret tool.
+type FolderMoveSecretInput struct {
+	SecretKey string  `json:"secret_key"` // Secret key to move
+	FolderID  *string `json:"folder_id"`  // Target folder UUID (null for unfiled)
+}
+
+// FolderMoveSecretOutput for folder_move_secret tool.
+type FolderMoveSecretOutput struct {
+	SecretKey  string `json:"secret_key"`
+	FolderID   string `json:"folder_id,omitempty"`
+	FolderPath string `json:"folder_path,omitempty"`
+}
+
+// handleFolderList handles the folder_list tool call.
+func (s *Server) handleFolderList(_ context.Context, _ *mcp.CallToolRequest, input FolderListInput) (*mcp.CallToolResult, FolderListOutput, error) {
+	var parentID *string
+	if input.ParentID != "" {
+		parentID = &input.ParentID
+	}
+
+	folders, err := s.vault.ListFolders(parentID)
+	if err != nil {
+		return nil, FolderListOutput{}, fmt.Errorf("failed to list folders: %w", err)
+	}
+
+	output := FolderListOutput{
+		Folders: make([]FolderInfo, 0, len(folders)),
+	}
+
+	for _, f := range folders {
+		info := FolderInfo{
+			ID:             f.ID,
+			Name:           f.Name,
+			Path:           f.Path,
+			Icon:           f.Icon,
+			Color:          f.Color,
+			SortOrder:      f.SortOrder,
+			SecretCount:    f.SecretCount,
+			SubfolderCount: f.SubfolderCount,
+			CreatedAt:      f.CreatedAt.Format(time.RFC3339),
+			UpdatedAt:      f.UpdatedAt.Format(time.RFC3339),
+		}
+		if f.ParentID != nil {
+			info.ParentID = *f.ParentID
+		}
+		output.Folders = append(output.Folders, info)
+	}
+
+	return nil, output, nil
+}
+
+// handleFolderCreate handles the folder_create tool call.
+func (s *Server) handleFolderCreate(_ context.Context, _ *mcp.CallToolRequest, input FolderCreateInput) (*mcp.CallToolResult, FolderCreateOutput, error) {
+	if input.Name == "" {
+		return nil, FolderCreateOutput{}, errors.New("name is required")
+	}
+
+	var parentID *string
+	if input.ParentID != "" {
+		parentID = &input.ParentID
+	}
+
+	folder := &vault.Folder{
+		ID:       generateUUID(),
+		Name:     input.Name,
+		ParentID: parentID,
+		Icon:     input.Icon,
+		Color:    input.Color,
+	}
+
+	if err := s.vault.CreateFolder(folder); err != nil {
+		return nil, FolderCreateOutput{}, fmt.Errorf("failed to create folder: %w", err)
+	}
+
+	// Compute path for response
+	path := input.Name
+	if parentID != nil {
+		parent, err := s.vault.GetFolder(*parentID)
+		if err == nil {
+			path = s.computeFolderPath(parent) + "/" + input.Name
+		}
+	}
+
+	return nil, FolderCreateOutput{
+		ID:   folder.ID,
+		Name: folder.Name,
+		Path: path,
+	}, nil
+}
+
+// handleFolderMoveSecret handles the folder_move_secret tool call.
+func (s *Server) handleFolderMoveSecret(_ context.Context, _ *mcp.CallToolRequest, input FolderMoveSecretInput) (*mcp.CallToolResult, FolderMoveSecretOutput, error) {
+	if input.SecretKey == "" {
+		return nil, FolderMoveSecretOutput{}, errors.New("secret_key is required")
+	}
+
+	if err := s.vault.MoveSecretToFolder(input.SecretKey, input.FolderID); err != nil {
+		return nil, FolderMoveSecretOutput{}, fmt.Errorf("failed to move secret: %w", err)
+	}
+
+	output := FolderMoveSecretOutput{
+		SecretKey: input.SecretKey,
+	}
+
+	if input.FolderID != nil {
+		output.FolderID = *input.FolderID
+		folder, err := s.vault.GetFolder(*input.FolderID)
+		if err == nil {
+			output.FolderPath = s.computeFolderPath(folder)
+		}
+	}
+
+	return nil, output, nil
+}
+
+// computeFolderPath computes the full path for a folder.
+func (s *Server) computeFolderPath(folder *vault.Folder) string {
+	if folder == nil {
+		return ""
+	}
+
+	var parts []string
+	current := folder
+	for current != nil {
+		parts = append([]string{current.Name}, parts...)
+		if current.ParentID == nil {
+			break
+		}
+		parent, err := s.vault.GetFolder(*current.ParentID)
+		if err != nil {
+			break
+		}
+		current = parent
+	}
+
+	return strings.Join(parts, "/")
+}
+
+// generateUUID generates a new UUID v4 string.
+func generateUUID() string {
+	// Simple UUID v4 generation using crypto/rand
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	b[6] = (b[6] & 0x0f) | 0x40 // Version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // Variant 10
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
