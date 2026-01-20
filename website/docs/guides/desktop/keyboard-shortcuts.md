@@ -19,16 +19,42 @@ The secretctl desktop app supports keyboard shortcuts for power users who want t
 
 | Shortcut | Action | Context |
 |----------|--------|---------|
+| `Cmd/Ctrl + K` | Command Palette | Anywhere |
 | `Cmd/Ctrl + N` | New secret | Anywhere |
 | `Cmd/Ctrl + F` | Focus search | Anywhere |
+| `Cmd/Ctrl + ,` | Settings | Anywhere |
 | `Cmd/Ctrl + C` | Copy value | Secret selected |
 | `Cmd/Ctrl + S` | Save changes | Editing |
 | `Cmd/Ctrl + L` | Lock vault | Anywhere |
+| `Cmd/Ctrl + /` | Show shortcuts | Anywhere |
 | `Escape` | Cancel | Editing/Creating |
 
 :::note
 On macOS, use `Cmd`. On Windows/Linux, use `Ctrl`.
 :::
+
+## Command Palette
+
+**Shortcut:** `Cmd/Ctrl + K`
+
+The Command Palette provides quick access to all common actions:
+
+1. Press `Cmd/Ctrl + K` to open
+2. Type to filter commands
+3. Press `Enter` to execute, or click a command
+4. Press `Escape` to close
+
+### Available Commands
+
+| Command | Shortcut | Description |
+|---------|----------|-------------|
+| New Secret | `Cmd/Ctrl + N` | Create a new secret |
+| Search Secrets | `Cmd/Ctrl + F` | Focus the search bar |
+| Settings | `Cmd/Ctrl + ,` | Open settings page |
+| Lock Vault | `Cmd/Ctrl + L` | Lock the vault |
+| Keyboard Shortcuts | `Cmd/Ctrl + /` | Show shortcut help |
+
+The Command Palette is searchable, so you can type partial command names to filter.
 
 ## Navigation Shortcuts
 
@@ -231,11 +257,14 @@ To ensure you copy the secret value:
 
 | Shortcut | Action | Works When |
 |----------|--------|------------|
+| `Cmd/Ctrl + K` | Open Command Palette | Always |
 | `Cmd/Ctrl + N` | New secret | Always |
 | `Cmd/Ctrl + F` | Focus search | Always |
+| `Cmd/Ctrl + ,` | Open settings | Always |
 | `Cmd/Ctrl + C` | Copy secret value | Secret selected, no text selection |
 | `Cmd/Ctrl + S` | Save | Editing or creating |
 | `Cmd/Ctrl + L` | Lock vault | Always |
+| `Cmd/Ctrl + /` | Show shortcuts help | Always |
 | `Escape` | Cancel/Close | Editing, creating, or dialog open |
 | `Tab` | Next field | Form navigation |
 | `Shift + Tab` | Previous field | Form navigation |

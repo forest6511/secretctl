@@ -53,6 +53,32 @@
   --radius: 0.5rem;
 }
 
+/* Dark theme overrides using data-theme attribute */
+[data-theme="dark"] {
+  --color-background: #0f172a;
+  --color-foreground: #f1f5f9;
+  --color-muted: #1e293b;
+  --color-muted-foreground: #94a3b8;
+  --color-border: #334155;
+  --color-primary: #38bdf8;
+  --color-primary-foreground: #0c4a6e;
+  --color-secondary: #1e3a5f;
+  --color-secondary-foreground: #7dd3fc;
+  --color-destructive: #f87171;
+  --color-destructive-foreground: #450a0a;
+  --color-accent: #22d3ee;
+  --color-accent-foreground: #164e63;
+  --color-ring: #22d3ee;
+  --color-success: #4ade80;
+  --color-success-foreground: #14532d;
+  --color-warning: #fb923c;
+  --color-warning-foreground: #431407;
+  --color-header: #020617;
+  --color-header-foreground: #f8fafc;
+  --color-card: #1e293b;
+  --color-card-foreground: #f1f5f9;
+}
+
 @layer base {
   * {
     @apply border-border;
@@ -72,54 +98,54 @@
 @layer components {
   /* Primary button with gradient and shadow */
   .btn-primary-enhanced {
-    background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+    background: linear-gradient(135deg, var(--color-accent) 0%, var(--color-primary) 100%);
     box-shadow: 0 2px 8px rgba(14, 165, 233, 0.35);
     transition: all 0.2s ease;
   }
   .btn-primary-enhanced:hover {
-    background: linear-gradient(135deg, #38bdf8 0%, #0ea5e9 100%);
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%);
     box-shadow: 0 4px 12px rgba(14, 165, 233, 0.45);
     transform: translateY(-1px);
   }
 
   /* Card with accent border */
   .card-accent {
-    border-left: 3px solid #0ea5e9;
+    border-left: 3px solid var(--color-accent);
   }
 
   /* Header bar style */
   .header-bar {
-    background: linear-gradient(90deg, #0f172a 0%, #1e293b 100%);
-    color: #f8fafc;
+    background: linear-gradient(90deg, var(--color-header) 0%, var(--color-muted) 100%);
+    color: var(--color-header-foreground);
   }
 
   /* Active/Selected state */
   .active-item {
-    background-color: #e0f2fe;
-    border-left: 3px solid #0ea5e9;
+    background-color: var(--color-secondary);
+    border-left: 3px solid var(--color-accent);
   }
 
   /* Icon button with accent */
   .icon-btn-accent {
-    color: #64748b;
+    color: var(--color-muted-foreground);
     transition: color 0.15s ease;
   }
   .icon-btn-accent:hover {
-    color: #0ea5e9;
+    color: var(--color-accent);
   }
 
   /* Badge/Tag styles */
   .badge-primary {
-    background-color: #0ea5e9;
-    color: white;
+    background-color: var(--color-accent);
+    color: var(--color-accent-foreground);
     padding: 2px 8px;
     border-radius: 9999px;
     font-size: 12px;
     font-weight: 500;
   }
   .badge-secondary {
-    background-color: #e0f2fe;
-    color: #0369a1;
+    background-color: var(--color-secondary);
+    color: var(--color-secondary-foreground);
     padding: 2px 8px;
     border-radius: 9999px;
     font-size: 12px;
@@ -128,13 +154,13 @@
 
   /* Input focus enhancement */
   .input-enhanced:focus {
-    border-color: #0ea5e9;
+    border-color: var(--color-accent);
     box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.15);
   }
 
   /* Section header with accent */
   .section-header {
-    border-bottom: 2px solid #0ea5e9;
+    border-bottom: 2px solid var(--color-accent);
     padding-bottom: 8px;
     margin-bottom: 16px;
   }

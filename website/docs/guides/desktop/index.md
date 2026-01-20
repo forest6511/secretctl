@@ -120,17 +120,43 @@ Quick access to:
 - **Refresh** - Reload secret list
 - **Lock** - Secure the vault
 
+## Settings
+
+Access settings with `Cmd/Ctrl + ,` or through the Command Palette.
+
+### Theme
+
+Choose your preferred appearance:
+
+- **Light** - Default light theme
+- **Dark** - Dark mode for low-light environments
+- **System** - Automatically match your OS preference
+
+Dark mode reduces eye strain and saves battery on OLED displays.
+
+### Language
+
+Select your preferred display language:
+
+- **English** - Default
+- **日本語** (Japanese)
+
+The app will remember your language preference across sessions.
+
 ## Keyboard Shortcuts
 
 Power users can navigate quickly with shortcuts:
 
 | Shortcut | Action |
 |----------|--------|
+| `Cmd/Ctrl + K` | Command Palette |
 | `Cmd/Ctrl + N` | New secret |
 | `Cmd/Ctrl + F` | Focus search |
+| `Cmd/Ctrl + ,` | Settings |
 | `Cmd/Ctrl + C` | Copy selected value |
 | `Cmd/Ctrl + S` | Save changes |
 | `Cmd/Ctrl + L` | Lock vault |
+| `Cmd/Ctrl + /` | Show shortcuts |
 | `Escape` | Cancel editing |
 
 See [Keyboard Shortcuts](/docs/guides/desktop/keyboard-shortcuts) for the complete list.

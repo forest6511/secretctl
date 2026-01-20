@@ -28,12 +28,16 @@ secretctl export -o .env
 
 # Generate passwords
 secretctl generate
+
+# Enable shell completion
+secretctl completion bash   # or zsh, fish, powershell
 ```
 
 ## Guides
 
 - [Running Commands](/docs/guides/cli/running-commands) - Execute commands with secrets as environment variables
 - [Password Generation](/docs/guides/cli/password-generation) - Generate secure random passwords
+- [Shell Completion](/docs/guides/cli/shell-completion) - Enable tab completion for your shell
 
 ## Reference
 

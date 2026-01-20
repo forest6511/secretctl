@@ -163,11 +163,41 @@
     "envVarExists": "環境変数は既に存在します",
     "envVarRequired": "環境変数は必須です"
   },
+  "commandPalette": {
+    "title": "コマンドパレット",
+    "placeholder": "コマンドを入力...",
+    "newSecret": "新規シークレット",
+    "searchSecrets": "シークレットを検索",
+    "settings": "設定",
+    "lockVault": "ボールトをロック",
+    "keyboardShortcuts": "キーボードショートカット",
+    "noCommands": "コマンドが見つかりません"
+  },
+  "shortcuts": {
+    "title": "キーボードショートカット",
+    "general": "一般",
+    "commandPalette": "コマンドパレット",
+    "newSecret": "新規シークレット",
+    "searchSecrets": "シークレットを検索",
+    "settings": "設定",
+    "lockVault": "ボールトをロック",
+    "showHelp": "ショートカットを表示"
+  },
+  "settings": {
+    "title": "設定",
+    "appearance": "外観",
+    "theme": "テーマ",
+    "themeDescription": "お好みの配色を選択してください",
+    "language": "言語",
+    "displayLanguage": "表示言語",
+    "languageDescription": "お好みの言語を選択してください"
+  },
   "tooltips": {
     "auditLog": "監査ログ",
     "refresh": "更新",
     "changePassword": "パスワードを変更",
     "lock": "ロック",
-    "copySecret": "コピー (⌘C)"
+    "copySecret": "コピー (⌘C)",
+    "settings": "設定"
   }
 }

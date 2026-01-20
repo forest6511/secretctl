@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Search, Plus, Copy, Trash2, Eye, EyeOff, Key,
-  Lock, RefreshCw, FileText, ExternalLink, Tag, ClipboardList
+  Lock, RefreshCw, FileText, ExternalLink, Tag, ClipboardList, Settings
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -46,9 +46,10 @@ import { EventsOn } from '../../wailsjs/runtime/runtime'
 interface SecretsPageProps {
   onLocked: () => void
   onNavigateToAudit: () => void
+  onNavigateToSettings?: () => void
 }
 
-export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
+export function SecretsPage({ onLocked, onNavigateToAudit, onNavigateToSettings }: SecretsPageProps) {
   const { t } = useTranslation()
   const [secrets, setSecrets] = useState<main.SecretListItem[]>([])
   const [searchQuery, setSearchQuery] = useState('')
@@ -436,6 +437,11 @@ export function SecretsPage({ onLocked, onNavigateToAudit }: SecretsPageProps) {
               <Button variant="ghost" size="icon" className="text-white hover:bg-white hover:text-sky-500 hover:rounded" onClick={onNavigateToAudit} title={t('tooltips.auditLog')} data-testid="audit-button">
                 <ClipboardList className="w-4 h-4" />
               </Button>
+              {onNavigateToSettings && (
+              <Button variant="ghost" size="icon" className="text-white hover:bg-white hover:text-sky-500 hover:rounded" onClick={onNavigateToSettings} title={t('tooltips.settings')} data-testid="settings-button">
+                <Settings className="w-4 h-4" />
+              </Button>
+              )}
               <Button variant="ghost" size="icon" className="text-white hover:bg-white hover:text-sky-500 hover:rounded" onClick={loadSecrets} title={t('tooltips.refresh')}>
                 <RefreshCw className="w-4 h-4" />
               </Button>
