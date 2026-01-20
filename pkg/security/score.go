@@ -298,6 +298,7 @@ func (c *Calculator) calculateExpirationScore(secrets []*vault.SecretEntry, incl
 		secretsWithExpiration++
 		expiresAt := *entry.ExpiresAt
 
+		//nolint:gocritic // if-else chain is clearer for time comparisons
 		if expiresAt.Before(now) {
 			// Already expired
 			issue := SecurityIssue{
@@ -343,7 +344,7 @@ func (c *Calculator) calculateExpirationScore(secrets []*vault.SecretEntry, incl
 
 // calculateCoverageScore evaluates field coverage for templated secrets.
 // Currently returns full score (N/A) as templates are Phase 3.
-func (c *Calculator) calculateCoverageScore(secrets []*vault.SecretEntry) int {
+func (c *Calculator) calculateCoverageScore(_ []*vault.SecretEntry) int {
 	// Phase 3: Schema/template validation
 	// For now, all secrets get full coverage score
 	return 25

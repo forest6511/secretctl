@@ -147,7 +147,6 @@ type SecretRunWithBindingsInput struct {
 	Timeout string   `json:"timeout,omitempty"`
 }
 
-
 // SecurityScoreInput represents input for security_score tool.
 type SecurityScoreInput struct {
 	IncludeKeys bool `json:"include_keys,omitempty"` // Whether to include secret keys in response
@@ -155,12 +154,12 @@ type SecurityScoreInput struct {
 
 // SecurityScoreOutput represents output for security_score tool.
 type SecurityScoreOutput struct {
-	Overall     int                  `json:"overall_score"`
-	Components  SecurityComponents   `json:"components"`
-	IssueCounts SecurityIssueCounts  `json:"issues_count"`
-	TopIssues   []SecurityIssueInfo  `json:"top_issues"`
-	Suggestions []string             `json:"suggestions"`
-	Limited     bool                 `json:"limited"`
+	Overall     int                 `json:"overall_score"`
+	Components  SecurityComponents  `json:"components"`
+	IssueCounts SecurityIssueCounts `json:"issues_count"`
+	TopIssues   []SecurityIssueInfo `json:"top_issues"`
+	Suggestions []string            `json:"suggestions"`
+	Limited     bool                `json:"limited"`
 }
 
 // SecurityComponents represents the score breakdown.
@@ -1297,7 +1296,6 @@ func parseDuration(s string) (time.Duration, error) {
 		return time.ParseDuration(s)
 	}
 }
-
 
 // handleSecurityScore handles the security_score tool call.
 func (s *Server) handleSecurityScore(_ context.Context, _ *mcp.CallToolRequest, input SecurityScoreInput) (*mcp.CallToolResult, SecurityScoreOutput, error) {

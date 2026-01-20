@@ -116,7 +116,6 @@ Upgrade to Team edition for the full list.`,
 	},
 }
 
-
 // securityWeakCmd lists weak passwords.
 var securityWeakCmd = &cobra.Command{
 	Use:   "weak",
@@ -257,10 +256,10 @@ func outputSecurityJSON(score *security.SecurityScore) error {
 }
 
 // outputSecurityText outputs the security score as formatted text.
-func outputSecurityText(score *security.SecurityScore, verbose bool) error {
+func outputSecurityText(score *security.SecurityScore, verbose bool) error { //nolint:unparam // error return for future use
 	// Score header
 	emoji := "🔒"
-	rating := "Excellent"
+	var rating string
 	switch {
 	case score.Overall >= 90:
 		rating = "Excellent"
@@ -291,7 +290,7 @@ func outputSecurityText(score *security.SecurityScore, verbose bool) error {
 			typeLabel := strings.ToUpper(string(issue.Type))
 			keyInfo := ""
 			if issue.SecretKey != "" {
-				keyInfo = fmt.Sprintf(" \"%s\"", issue.SecretKey)
+				keyInfo = fmt.Sprintf(" %q", issue.SecretKey)
 			} else if len(issue.SecretKeys) > 0 {
 				keyInfo = fmt.Sprintf(" %s", strings.Join(issue.SecretKeys, ", "))
 			}
@@ -318,9 +317,9 @@ func outputSecurityText(score *security.SecurityScore, verbose bool) error {
 }
 
 // progressBar creates a simple ASCII progress bar.
-func progressBar(value, max int) string {
+func progressBar(value, maxVal int) string { //nolint:unparam // maxVal kept for flexibility
 	width := 20
-	filled := value * width / max
+	filled := value * width / maxVal
 	empty := width - filled
 	return "[" + strings.Repeat("█", filled) + strings.Repeat("░", empty) + "]"
 }

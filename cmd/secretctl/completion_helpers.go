@@ -142,7 +142,5 @@ func registerCompletionFunctions() {
 	deleteCmd.ValidArgsFunction = completeSecretKeys
 
 	// Register flag completion for --tag
-	_ = listCmd.RegisterFlagCompletionFunc("tag", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		return completeTags(cmd, args, toComplete)
-	})
+	_ = listCmd.RegisterFlagCompletionFunc("tag", completeTags)
 }
