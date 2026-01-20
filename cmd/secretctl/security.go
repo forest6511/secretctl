@@ -8,6 +8,7 @@ import (
 
 	"github.com/forest6511/secretctl/pkg/security"
 	"github.com/forest6511/secretctl/pkg/vault"
+
 	"github.com/spf13/cobra"
 )
 
