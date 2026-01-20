@@ -28,12 +28,16 @@ secretctl export -o .env
 
 # パスワードを生成
 secretctl generate
+
+# シェル補完を有効にする
+secretctl completion bash   # または zsh, fish, powershell
 ```
 
 ## ガイド
 
 - [コマンドの実行](/docs/guides/cli/running-commands) - シークレットを環境変数としてコマンドを実行
 - [パスワード生成](/docs/guides/cli/password-generation) - 安全なランダムパスワードを生成
+- [シェル補完](/docs/guides/cli/shell-completion) - シェルのタブ補完を有効にする
 
 ## リファレンス
 

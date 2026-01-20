@@ -163,11 +163,41 @@
     "envVarExists": "Environment variable already exists",
     "envVarRequired": "Environment variable is required"
   },
+  "commandPalette": {
+    "title": "Command Palette",
+    "placeholder": "Type a command...",
+    "newSecret": "New Secret",
+    "searchSecrets": "Search Secrets",
+    "settings": "Settings",
+    "lockVault": "Lock Vault",
+    "keyboardShortcuts": "Keyboard Shortcuts",
+    "noCommands": "No commands found"
+  },
+  "shortcuts": {
+    "title": "Keyboard Shortcuts",
+    "general": "General",
+    "commandPalette": "Command Palette",
+    "newSecret": "New Secret",
+    "searchSecrets": "Search Secrets",
+    "settings": "Settings",
+    "lockVault": "Lock Vault",
+    "showHelp": "Show Shortcuts"
+  },
+  "settings": {
+    "title": "Settings",
+    "appearance": "Appearance",
+    "theme": "Theme",
+    "themeDescription": "Choose your preferred color scheme",
+    "language": "Language",
+    "displayLanguage": "Display Language",
+    "languageDescription": "Select your preferred language"
+  },
   "tooltips": {
     "auditLog": "Audit Log",
     "refresh": "Refresh",
     "changePassword": "Change Password",
     "lock": "Lock",
-    "copySecret": "Copy (⌘C)"
+    "copySecret": "Copy (⌘C)",
+    "settings": "Settings"
   }
 }

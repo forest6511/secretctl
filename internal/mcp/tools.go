@@ -19,6 +19,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/forest6511/secretctl/pkg/audit"
+	"github.com/forest6511/secretctl/pkg/security"
 	"github.com/forest6511/secretctl/pkg/vault"
 )
 
@@ -144,6 +145,46 @@ type SecretRunWithBindingsInput struct {
 	Command string   `json:"command"`
 	Args    []string `json:"args,omitempty"`
 	Timeout string   `json:"timeout,omitempty"`
+}
+
+// SecurityScoreInput represents input for security_score tool.
+type SecurityScoreInput struct {
+	IncludeKeys bool `json:"include_keys,omitempty"` // Whether to include secret keys in response
+}
+
+// SecurityScoreOutput represents output for security_score tool.
+type SecurityScoreOutput struct {
+	Overall     int                 `json:"overall_score"`
+	Components  SecurityComponents  `json:"components"`
+	IssueCounts SecurityIssueCounts `json:"issues_count"`
+	TopIssues   []SecurityIssueInfo `json:"top_issues"`
+	Suggestions []string            `json:"suggestions"`
+	Limited     bool                `json:"limited"`
+}
+
+// SecurityComponents represents the score breakdown.
+type SecurityComponents struct {
+	Strength   int `json:"strength"`
+	Uniqueness int `json:"uniqueness"`
+	Expiration int `json:"expiration"`
+	Coverage   int `json:"coverage"`
+}
+
+// SecurityIssueCounts represents the count of each issue type.
+type SecurityIssueCounts struct {
+	Duplicates int `json:"duplicates"`
+	Weak       int `json:"weak"`
+	Expiring   int `json:"expiring"`
+	Expired    int `json:"expired"`
+}
+
+// SecurityIssueInfo represents a security issue.
+type SecurityIssueInfo struct {
+	Type        string   `json:"type"`
+	Severity    string   `json:"severity"`
+	Count       int      `json:"count,omitempty"`
+	Description string   `json:"description"`
+	SecretKeys  []string `json:"secret_keys,omitempty"`
 }
 
 // handleSecretList handles the secret_list tool call.
@@ -1254,4 +1295,66 @@ func parseDuration(s string) (time.Duration, error) {
 	default:
 		return time.ParseDuration(s)
 	}
+}
+
+// handleSecurityScore handles the security_score tool call.
+func (s *Server) handleSecurityScore(_ context.Context, _ *mcp.CallToolRequest, input SecurityScoreInput) (*mcp.CallToolResult, SecurityScoreOutput, error) {
+	calc := security.NewCalculator(s.vault, security.EditionFree)
+
+	score, err := calc.CalculateScore(input.IncludeKeys)
+	if err != nil {
+		return nil, SecurityScoreOutput{}, fmt.Errorf("failed to calculate security score: %w", err)
+	}
+
+	// Count issues by type
+	counts := SecurityIssueCounts{}
+	for _, issue := range score.Issues {
+		switch issue.Type {
+		case security.IssueDuplicatePassword:
+			counts.Duplicates++
+		case security.IssueWeakPassword:
+			counts.Weak++
+		case security.IssueExpiringSoon:
+			counts.Expiring++
+		case security.IssueExpired:
+			counts.Expired++
+		}
+	}
+
+	// Convert issues to output format
+	topIssues := make([]SecurityIssueInfo, 0, len(score.Issues))
+	for _, issue := range score.Issues {
+		info := SecurityIssueInfo{
+			Type:        string(issue.Type),
+			Severity:    string(issue.Severity),
+			Description: issue.Description,
+		}
+		if input.IncludeKeys {
+			if issue.SecretKey != "" {
+				info.SecretKeys = []string{issue.SecretKey}
+			} else if len(issue.SecretKeys) > 0 {
+				info.SecretKeys = issue.SecretKeys
+			}
+		}
+		if issue.Type == security.IssueDuplicatePassword && len(issue.SecretKeys) > 0 {
+			info.Count = len(issue.SecretKeys)
+		}
+		topIssues = append(topIssues, info)
+	}
+
+	output := SecurityScoreOutput{
+		Overall: score.Overall,
+		Components: SecurityComponents{
+			Strength:   score.Components.StrengthScore,
+			Uniqueness: score.Components.UniquenessScore,
+			Expiration: score.Components.ExpirationScore,
+			Coverage:   score.Components.CoverageScore,
+		},
+		IssueCounts: counts,
+		TopIssues:   topIssues,
+		Suggestions: score.Suggestions,
+		Limited:     score.Limited,
+	}
+
+	return nil, output, nil
 }

@@ -147,6 +147,12 @@ func (s *Server) registerTools() {
 		Name:        "secret_run_with_bindings",
 		Description: "Execute a command with environment variables injected based on the secret's predefined bindings. Each binding maps an environment variable name to a field. Requires policy approval.",
 	}, s.handleSecretRunWithBindings)
+
+	// security_score - Get vault security score and issue summary
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "security_score",
+		Description: "Get the security health score of your vault including password strength, duplicate detection, and expiration status. Returns a score from 0-100 with issue details and suggestions.",
+	}, s.handleSecurityScore)
 }
 
 // Run starts the MCP server using stdio transport.
