@@ -23,6 +23,7 @@ secretctl MCP サーバーは、**AI エージェントが平文のシークレ�
 | `secret_list_fields` | マルチフィールドシークレットのフィールド名を一覧（値なし） |
 | `secret_get_field` | 非機密フィールドの値のみを取得 |
 | `secret_run_with_bindings` | 定義済み環境バインディングで実行 |
+| `security_score` | Vault のセキュリティ健全性スコアと推奨事項を取得 |
 
 ---
 
@@ -727,6 +728,179 @@ secretctl set database/production \
 
 ---
 
+## security_score
+
+パスワード強度、重複検出、有効期限状態を含む Vault のセキュリティ健全性スコアを取得します。0-100のスコアと問題の詳細、推奨事項を返します。
+
+### 入力スキーマ
+
+```json
+{
+  "include_keys": "boolean (オプション)"
+}
+```
+
+| フィールド | 型 | 必須 | 説明 |
+|-----------|-----|------|------|
+| `include_keys` | boolean | いいえ | 問題詳細にシークレットキーを含めるか（デフォルト: false） |
+
+### 出力スキーマ
+
+```json
+{
+  "overall_score": "integer (0-100)",
+  "components": {
+    "strength": "integer (0-25)",
+    "uniqueness": "integer (0-25)",
+    "expiration": "integer (0-25)",
+    "coverage": "integer (0-25)"
+  },
+  "issues_count": {
+    "duplicates": "integer",
+    "weak": "integer",
+    "expiring": "integer",
+    "expired": "integer"
+  },
+  "top_issues": [
+    {
+      "type": "string",
+      "severity": "string",
+      "count": "integer",
+      "description": "string",
+      "secret_keys": ["string"]
+    }
+  ],
+  "suggestions": ["string"],
+  "limited": "boolean"
+}
+```
+
+| フィールド | 型 | 説明 |
+|-----------|-----|------|
+| `overall_score` | integer | 総合セキュリティスコア（0-100） |
+| `components` | object | カテゴリ別のスコア内訳（各0-25） |
+| `components.strength` | integer | パスワード強度スコア |
+| `components.uniqueness` | integer | パスワードユニーク性スコア |
+| `components.expiration` | integer | 有効期限コンプライアンススコア |
+| `components.coverage` | integer | フィールドカバレッジスコア（Phase 3、現在は常に25） |
+| `issues_count` | object | 問題タイプ別のカウント |
+| `top_issues` | array | 問題と詳細（Free版: weak/duplicateは各3件まで） |
+| `suggestions` | array | 実行可能な推奨事項 |
+| `limited` | boolean | Free版の制限により結果が制限された場合true |
+
+### 問題タイプ
+
+| タイプ | 重大度 | 説明 |
+|--------|--------|------|
+| `weak` | warning | パスワード強度が不十分 |
+| `duplicate` | warning | 複数のシークレットが同じパスワードを共有 |
+| `expiring` | warning | シークレットが警告期間内に期限切れ |
+| `expired` | critical | シークレットが既に期限切れ |
+
+### 例
+
+**セキュリティスコアを取得:**
+
+```json
+// 入力
+{}
+
+// 出力
+{
+  "overall_score": 85,
+  "components": {
+    "strength": 20,
+    "uniqueness": 25,
+    "expiration": 15,
+    "coverage": 25
+  },
+  "issues_count": {
+    "duplicates": 0,
+    "weak": 2,
+    "expiring": 1,
+    "expired": 0
+  },
+  "top_issues": [
+    {
+      "type": "weak",
+      "severity": "warning",
+      "description": "Password has insufficient strength"
+    },
+    {
+      "type": "expiring",
+      "severity": "warning",
+      "description": "Secret expires in 5 days"
+    }
+  ],
+  "suggestions": [
+    "Update weak passwords with stronger alternatives (14+ characters)",
+    "Plan to renew expiring credentials before they expire"
+  ],
+  "limited": false
+}
+```
+
+**シークレットキー付きでセキュリティスコアを取得:**
+
+```json
+// 入力
+{
+  "include_keys": true
+}
+
+// 出力
+{
+  "overall_score": 85,
+  "components": {
+    "strength": 20,
+    "uniqueness": 25,
+    "expiration": 15,
+    "coverage": 25
+  },
+  "issues_count": {
+    "duplicates": 0,
+    "weak": 2,
+    "expiring": 1,
+    "expired": 0
+  },
+  "top_issues": [
+    {
+      "type": "weak",
+      "severity": "warning",
+      "description": "Password has insufficient strength",
+      "secret_keys": ["github-token", "api/legacy"]
+    },
+    {
+      "type": "expiring",
+      "severity": "warning",
+      "description": "Secret expires in 5 days",
+      "secret_keys": ["aws/temp-token"]
+    }
+  ],
+  "suggestions": [
+    "Update weak passwords with stronger alternatives (14+ characters)",
+    "Plan to renew expiring credentials before they expire"
+  ],
+  "limited": false
+}
+```
+
+### Free版 vs Team版
+
+| 機能 | Free | Team |
+|------|------|------|
+| セキュリティスコア | ✅ | ✅ |
+| 問題カウント | ✅ | ✅ |
+| 弱いパスワードの問題 | 最大3件 | 無制限 |
+| 重複パスワードの問題 | 最大3件 | 無制限 |
+| 期限切れ/期限間近の問題 | ✅ | ✅ |
+| 問題内のシークレットキー | ✅ | ✅ |
+| チーム全体ダッシュボード | ❌ | ✅ |
+
+`limited: true` の場合、Free版の制限により一部の弱いパスワードまたは重複パスワードの問題が省略されています。完全な可視性のためにTeam版にアップグレードしてください。
+
+---
+
 ## ポリシー設定
 
 `secret_run` と `secret_run_with_bindings` ツールにはポリシー承認が必要です。`~/.secretctl/mcp-policy.yaml` を作成してください:
@@ -790,6 +964,7 @@ secretctl MCP サーバーは「AI安全設計」セキュリティモデルに�
 | `secret_list_fields` | なし | フィールド名とメタデータのみ一覧 |
 | `secret_get_field` | なし** | 非機密フィールドのみ |
 | `secret_run_with_bindings` | なし* | 定義済みバインディング経由で注入 |
+| `security_score` | なし | セキュリティ指標と推奨事項を取得 |
 
 \* シークレットは子プロセスに環境変数として注入されます。AI エージェントは平文の値を見ることはありません。
 

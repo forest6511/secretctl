@@ -540,6 +540,84 @@ secretctl restore backup.enc --key-file=backup.key
 
 ---
 
+## security
+
+Analyze the security health of your vault and get recommendations.
+
+```bash
+secretctl security [flags]
+secretctl security [subcommand]
+```
+
+**Subcommands:**
+
+| Subcommand | Description |
+|------------|-------------|
+| `duplicates` | List duplicate passwords (Free: top 3) |
+| `expiring` | List secrets expiring soon |
+| `weak` | List weak passwords (Free: top 3) |
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Output in JSON format |
+| `-v, --verbose` | Show all details including suggestions |
+| `--days int` | Expiration warning window in days (default: 30) |
+
+**Score Components:**
+
+The security score (0-100) is calculated from four components:
+
+| Component | Max Points | Description |
+|-----------|-----------|-------------|
+| Password Strength | 25 | Average strength of password fields |
+| Uniqueness | 25 | Percentage of unique passwords |
+| Expiration | 25 | Percentage of non-expired secrets |
+| Coverage | 25 | Field coverage for templated secrets (Phase 3, currently always 25) |
+
+**Examples:**
+
+```bash
+# Show security score and top issues
+secretctl security
+
+# Show all components and suggestions
+secretctl security --verbose
+
+# Output in JSON format
+secretctl security --json
+
+# List duplicate passwords
+secretctl security duplicates
+
+# List secrets expiring within 7 days
+secretctl security expiring --days=7
+
+# List weak passwords
+secretctl security weak
+```
+
+**Example Output:**
+
+```
+🔒 Security Score: 85/100 (Good)
+
+Components:
+  Password Strength: 20/25 ████████░░
+  Uniqueness:        25/25 ██████████
+  Expiration:        15/25 ██████░░░░
+  Coverage:          25/25 ██████████
+
+⚠️  Top Issues (2):
+  1. [WEAK] "legacy-api": Password has insufficient strength
+  2. [EXPIRING_SOON] "aws/temp": Expires in 5 days
+```
+
+Use `--verbose` to see actionable suggestions.
+
+---
+
 ## mcp-server
 
 Start the MCP server for AI coding assistant integration.
