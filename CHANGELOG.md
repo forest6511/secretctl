@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.7] - 2026-01-22
+
+### Added
+- **Security Dashboard** - Analyze vault security health with comprehensive scoring (#169)
+  - Overall security score (0-100) based on password strength, uniqueness, and expiration
+  - Duplicate password detection using privacy-preserving HMAC comparison
+  - Weak password detection with NIST-compliant strength analysis
+  - CLI commands: `secretctl security`, `security duplicates`, `security weak`, `security expiring`
+- **Dark Mode** - Full dark theme support in Desktop app (#169)
+  - System preference detection with manual override
+  - Consistent theming across all components
+- **Keyboard Shortcuts** - Quick navigation and actions in Desktop app (#169)
+  - `Ctrl+N` / `Cmd+N`: New secret
+  - `Ctrl+S` / `Cmd+S`: Save
+  - `Ctrl+F` / `Cmd+F`: Focus search
+  - `Escape`: Cancel/close dialogs
+- **Shell Completion** - Tab completion for all CLI commands (#169)
+  - `secretctl completion bash`
+  - `secretctl completion zsh`
+  - `secretctl completion fish`
+  - `secretctl completion powershell`
+- **Internationalization (i18n)** - Multi-language support (#163)
+  - Japanese language support for Desktop app and Website
+  - Browser language auto-detection with English fallback
+
+### Documentation
+- Security Dashboard documentation (#170)
+- Japanese README with language badges (#164)
+- Rewritten README with pain-first messaging (#165)
+- Google Search Console verification (#171)
+- FUNDING.yml for GitHub Sponsors (#166)
+
 ## [0.8.6] - 2026-01-06
 
 ### Added
@@ -223,7 +255,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CLI commands: init, lock, unlock, set, get, list, delete
 - Audit commands: list, verify
 
-[Unreleased]: https://github.com/forest6511/secretctl/compare/v0.8.6...HEAD
+[Unreleased]: https://github.com/forest6511/secretctl/compare/v0.8.7...HEAD
+[0.8.7]: https://github.com/forest6511/secretctl/compare/v0.8.6...v0.8.7
 [0.8.6]: https://github.com/forest6511/secretctl/compare/v0.8.5...v0.8.6
 [0.8.5]: https://github.com/forest6511/secretctl/compare/v0.8.4...v0.8.5
 [0.8.4]: https://github.com/forest6511/secretctl/compare/v0.7.0...v0.8.4
