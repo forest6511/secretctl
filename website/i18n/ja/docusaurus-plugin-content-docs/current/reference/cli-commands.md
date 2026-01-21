@@ -540,6 +540,84 @@ secretctl restore backup.enc --key-file=backup.key
 
 ---
 
+## security
+
+Vault のセキュリティ健全性を分析し、推奨事項を取得。
+
+```bash
+secretctl security [flags]
+secretctl security [subcommand]
+```
+
+**サブコマンド:**
+
+| サブコマンド | 説明 |
+|------------|------|
+| `duplicates` | 重複パスワードを一覧（Free版: 上位3件） |
+| `expiring` | 期限切れ間近のシークレットを一覧 |
+| `weak` | 弱いパスワードを一覧（Free版: 上位3件） |
+
+**フラグ:**
+
+| フラグ | 説明 |
+|--------|------|
+| `--json` | JSON形式で出力 |
+| `-v, --verbose` | 提案を含む全詳細を表示 |
+| `--days int` | 有効期限警告ウィンドウ（日数、デフォルト: 30） |
+
+**スコアコンポーネント:**
+
+セキュリティスコア（0-100）は4つのコンポーネントから計算されます:
+
+| コンポーネント | 最大ポイント | 説明 |
+|--------------|------------|------|
+| Password Strength | 25 | パスワードフィールドの平均強度 |
+| Uniqueness | 25 | ユニークなパスワードの割合 |
+| Expiration | 25 | 期限切れでないシークレットの割合 |
+| Coverage | 25 | テンプレートのフィールドカバレッジ（Phase 3、現在は常に25） |
+
+**例:**
+
+```bash
+# セキュリティスコアとトップの問題を表示
+secretctl security
+
+# 全コンポーネントと提案を表示
+secretctl security --verbose
+
+# JSON形式で出力
+secretctl security --json
+
+# 重複パスワードを一覧
+secretctl security duplicates
+
+# 7日以内に期限切れのシークレットを一覧
+secretctl security expiring --days=7
+
+# 弱いパスワードを一覧
+secretctl security weak
+```
+
+**出力例:**
+
+```
+🔒 Security Score: 85/100 (Good)
+
+Components:
+  Password Strength: 20/25 ████████░░
+  Uniqueness:        25/25 ██████████
+  Expiration:        15/25 ██████░░░░
+  Coverage:          25/25 ██████████
+
+⚠️  Top Issues (2):
+  1. [WEAK] "legacy-api": Password has insufficient strength
+  2. [EXPIRING_SOON] "aws/temp": Expires in 5 days
+```
+
+`--verbose` で実行可能な提案を表示します。
+
+---
+
 ## mcp-server
 
 AI コーディングアシスタント連携用の MCP サーバーを起動。

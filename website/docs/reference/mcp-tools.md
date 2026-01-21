@@ -23,6 +23,7 @@ The secretctl MCP server implements a security-first design where **AI agents ne
 | `secret_list_fields` | List field names for multi-field secrets (no values) |
 | `secret_get_field` | Get non-sensitive field values only |
 | `secret_run_with_bindings` | Execute with predefined environment bindings |
+| `security_score` | Get vault security health score and recommendations |
 
 ---
 
@@ -727,6 +728,179 @@ When `secret_run_with_bindings` is called with this secret, the following enviro
 
 ---
 
+## security_score
+
+Get the security health score of your vault including password strength, duplicate detection, and expiration status. Returns a score from 0-100 with issue details and suggestions.
+
+### Input Schema
+
+```json
+{
+  "include_keys": "boolean (optional)"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `include_keys` | boolean | No | Whether to include secret keys in issue details (default: false) |
+
+### Output Schema
+
+```json
+{
+  "overall_score": "integer (0-100)",
+  "components": {
+    "strength": "integer (0-25)",
+    "uniqueness": "integer (0-25)",
+    "expiration": "integer (0-25)",
+    "coverage": "integer (0-25)"
+  },
+  "issues_count": {
+    "duplicates": "integer",
+    "weak": "integer",
+    "expiring": "integer",
+    "expired": "integer"
+  },
+  "top_issues": [
+    {
+      "type": "string",
+      "severity": "string",
+      "count": "integer",
+      "description": "string",
+      "secret_keys": ["string"]
+    }
+  ],
+  "suggestions": ["string"],
+  "limited": "boolean"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `overall_score` | integer | Total security score (0-100) |
+| `components` | object | Score breakdown by category (each 0-25) |
+| `components.strength` | integer | Password strength score |
+| `components.uniqueness` | integer | Password uniqueness score |
+| `components.expiration` | integer | Expiration compliance score |
+| `components.coverage` | integer | Field coverage score (Phase 3, currently always 25) |
+| `issues_count` | object | Count of each issue type |
+| `top_issues` | array | Issues with details (Free: weak/duplicate limited to 3 each) |
+| `suggestions` | array | Actionable recommendations |
+| `limited` | boolean | True if results were limited (Free edition) |
+
+### Issue Types
+
+| Type | Severity | Description |
+|------|----------|-------------|
+| `weak` | warning | Password has insufficient strength |
+| `duplicate` | warning | Multiple secrets share the same password |
+| `expiring` | warning | Secret expires within warning period |
+| `expired` | critical | Secret has already expired |
+
+### Examples
+
+**Get security score:**
+
+```json
+// Input
+{}
+
+// Output
+{
+  "overall_score": 85,
+  "components": {
+    "strength": 20,
+    "uniqueness": 25,
+    "expiration": 15,
+    "coverage": 25
+  },
+  "issues_count": {
+    "duplicates": 0,
+    "weak": 2,
+    "expiring": 1,
+    "expired": 0
+  },
+  "top_issues": [
+    {
+      "type": "weak",
+      "severity": "warning",
+      "description": "Password has insufficient strength"
+    },
+    {
+      "type": "expiring",
+      "severity": "warning",
+      "description": "Secret expires in 5 days"
+    }
+  ],
+  "suggestions": [
+    "Update weak passwords with stronger alternatives (14+ characters)",
+    "Plan to renew expiring credentials before they expire"
+  ],
+  "limited": false
+}
+```
+
+**Get security score with secret keys:**
+
+```json
+// Input
+{
+  "include_keys": true
+}
+
+// Output
+{
+  "overall_score": 85,
+  "components": {
+    "strength": 20,
+    "uniqueness": 25,
+    "expiration": 15,
+    "coverage": 25
+  },
+  "issues_count": {
+    "duplicates": 0,
+    "weak": 2,
+    "expiring": 1,
+    "expired": 0
+  },
+  "top_issues": [
+    {
+      "type": "weak",
+      "severity": "warning",
+      "description": "Password has insufficient strength",
+      "secret_keys": ["github-token", "api/legacy"]
+    },
+    {
+      "type": "expiring",
+      "severity": "warning",
+      "description": "Secret expires in 5 days",
+      "secret_keys": ["aws/temp-token"]
+    }
+  ],
+  "suggestions": [
+    "Update weak passwords with stronger alternatives (14+ characters)",
+    "Plan to renew expiring credentials before they expire"
+  ],
+  "limited": false
+}
+```
+
+### Free vs Team Edition
+
+| Feature | Free | Team |
+|---------|------|------|
+| Security score | ✅ | ✅ |
+| Issue counts | ✅ | ✅ |
+| Weak password issues | 3 max | Unlimited |
+| Duplicate password issues | 3 max | Unlimited |
+| Expiring/expired issues | ✅ | ✅ |
+| Secret keys in issues | ✅ | ✅ |
+| Team-wide dashboard | ❌ | ✅ |
+
+When `limited: true`, some weak or duplicate password issues were omitted due to Free edition limits. Upgrade to Team edition for complete visibility.
+
+---
+
 ## Policy Configuration
 
 The `secret_run` and `secret_run_with_bindings` tools require policy approval. Create `~/.secretctl/mcp-policy.yaml`:
@@ -790,6 +964,7 @@ The secretctl MCP server follows the "AI-Safe Access" security model:
 | `secret_list_fields` | No | List field names and metadata only |
 | `secret_get_field` | No** | Non-sensitive fields only |
 | `secret_run_with_bindings` | No* | Inject via predefined bindings |
+| `security_score` | No | Get security metrics and recommendations |
 
 \* Secrets are injected as environment variables into the child process. The AI agent never sees the plaintext values.
 
