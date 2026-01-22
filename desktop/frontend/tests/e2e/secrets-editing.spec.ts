@@ -336,7 +336,7 @@ test.describe('Secret Multi-field Editing', () => {
       await page.getByTestId('add-binding-button').click()
       await page.getByTestId('binding-envvar-input').fill('DUPLICATE_VAR')
       await page.getByTestId('add-binding-confirm').click()
-      await expect(page.getByTestId('binding-envvar-error')).toContainText('already bound')
+      await expect(page.getByTestId('binding-envvar-error')).toContainText('already exists')
 
       await page.getByTestId('add-binding-cancel').click()
     })

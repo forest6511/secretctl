@@ -482,7 +482,7 @@ export function SecretsPage({ onLocked, onNavigateToAudit, onNavigateToSettings 
                 <span className="font-medium truncate">{secret.key}</span>
                 {secret.fieldCount > 0 && (
                   <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                    {t('secrets.fieldCount', { count: secret.fieldCount })}
+                    {t('secrets.fields_count', { count: secret.fieldCount })}
                   </span>
                 )}
               </div>
