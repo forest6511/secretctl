@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.8] - 2026-01-23
+
+### Added
+- **Competitor Import** - Migrate secrets from other password managers (#168)
+  - 1Password CSV export import
+  - Bitwarden JSON export import
+  - LastPass CSV export import
+  - Automatic field mapping (username, password, url, notes)
+  - Support for `--preserve-case` and `--tag` options
+- **Folder Organization** - Organize secrets into hierarchical folders (#167)
+  - CLI commands: `folder create`, `folder list`, `folder delete`, `folder rename`, `folder move`, `folder info`
+  - MCP tools: `folder_list`, `folder_create`, `folder_move_secret`
+  - Folder customization with icons and colors
+  - Path-based secret organization (e.g., `work/aws/api-key`)
+
+### Fixed
+- MCP server version string updated from hardcoded 0.6.0 to match release version (#173)
+
 ## [0.8.7] - 2026-01-22
 
 ### Added
