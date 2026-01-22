@@ -53,6 +53,7 @@ linters-settings:
       - octalLiteral
       - rangeValCopy
       - stringXbytes
+      - unnamedResult
 
   goconst:
     min-len: 3
@@ -175,6 +176,16 @@ issues:
     - linters:
         - goconst
       text: "genesis"
+
+    # goconst: import command uses string literals that are clear in context
+    - path: cmd/secretctl/import
+      linters:
+        - goconst
+
+    # unparam: Importer functions maintain consistent signatures for interface compliance
+    - path: pkg/importer/
+      linters:
+        - unparam
 
   max-issues-per-linter: 50
   max-same-issues: 10

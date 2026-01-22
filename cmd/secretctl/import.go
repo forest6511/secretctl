@@ -41,6 +41,9 @@ func init() {
 	importCmd.Flags().Bool("skip", false, "Skip existing keys (same as --conflict=skip)")
 	importCmd.Flags().Bool("overwrite", false, "Overwrite existing keys (same as --conflict=overwrite)")
 	importCmd.Flags().Bool("error", false, "Error on conflict (same as --conflict=error)")
+
+	// Competitor import flags (1Password, Bitwarden, LastPass)
+	initCompetitorImportFlags()
 }
 
 var importCmd = &cobra.Command{
@@ -91,6 +94,12 @@ func executeImport(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Check if this is a competitor import (--from flag specified)
+	if isCompetitorImport() {
+		return executeCompetitorImport(filePath)
+	}
+
+	// Standard .env/JSON import
 	// Detect format if not specified
 	format, err := detectImportFormat(filePath)
 	if err != nil {
