@@ -335,8 +335,9 @@ func (v *Vault) ListFolders(parentID *string) ([]*FolderWithStats, error) {
 	if err != nil {
 		return nil, fmt.Errorf("vault: failed to list folders: %w", err)
 	}
+	defer rows.Close()
 
-	// Collect folder data first, then close rows before computing paths
+	// Collect folder data first, then iterate separately for computing paths
 	// (SQLite can deadlock if we query while iterating)
 	var folders []*FolderWithStats
 	for rows.Next() {
@@ -349,7 +350,6 @@ func (v *Vault) ListFolders(parentID *string) ([]*FolderWithStats, error) {
 			&f.SortOrder, &f.CreatedAt, &f.UpdatedAt,
 			&f.SecretCount, &f.SubfolderCount,
 		); err != nil {
-			rows.Close()
 			return nil, fmt.Errorf("vault: failed to scan folder: %w", err)
 		}
 
@@ -367,12 +367,10 @@ func (v *Vault) ListFolders(parentID *string) ([]*FolderWithStats, error) {
 	}
 
 	if err := rows.Err(); err != nil {
-		rows.Close()
 		return nil, fmt.Errorf("vault: error iterating folders: %w", err)
 	}
-	rows.Close()
 
-	// Now compute paths with rows closed
+	// Now compute paths after iteration is complete
 	for _, f := range folders {
 		f.Path, _ = v.computeFolderPathLocked(f.ID)
 	}

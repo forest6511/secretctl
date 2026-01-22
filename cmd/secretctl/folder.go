@@ -7,9 +7,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/forest6511/secretctl/pkg/vault"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
+
+	"github.com/forest6511/secretctl/pkg/vault"
 )
 
 // Folder command flags
