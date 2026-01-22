@@ -259,6 +259,9 @@ type SecretMetadata struct {
 // - Bindings: environment variable name to field name mapping
 // - Schema: reserved for Phase 3 schema validation
 //
+// Phase 2c-X2 Folder Support (ADR-007):
+// - FolderID: reference to folder for organization (NULL = unfiled)
+//
 // Backward Compatibility:
 // - Value field is deprecated but still supported for reading legacy secrets
 // - Legacy secrets are auto-converted to Fields["value"] on read
@@ -269,6 +272,7 @@ type SecretEntry struct {
 	Fields     map[string]Field  // Multi-field values (Phase 2.5+)
 	Bindings   map[string]string // Environment variable bindings: env_var_name -> field_name
 	Schema     string            // Reserved for Phase 3 schema validation
+	FolderID   *string           // Reference to folder (Phase 2c-X2, NULL = unfiled)
 	Metadata   *SecretMetadata   // Encrypted metadata (notes, url)
 	Tags       []string          // Plaintext: searchable tags
 	ExpiresAt  *time.Time        // Plaintext: expiration date
@@ -551,6 +555,15 @@ func (v *Vault) Unlock(masterPassword string) error {
 		return fmt.Errorf("vault: schema migration failed: %w", err)
 	}
 
+	// 7. Enable foreign keys (required for ON DELETE RESTRICT per ADR-007)
+	_, err = db.Exec("PRAGMA foreign_keys = ON")
+	if err != nil {
+		v.dek = nil
+		v.db = nil
+		db.Close()
+		return fmt.Errorf("vault: failed to enable foreign keys: %w", err)
+	}
+
 	// Clear lock state on successful unlock
 	if err := v.clearLockState(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to clear lock state: %v\n", err)
@@ -787,8 +800,14 @@ func (v *Vault) checkAndWarnPermissions() {
 
 // createTables creates the required SQLite tables
 func (v *Vault) createTables(db *sql.DB) error {
+	// Enable foreign keys (required for ON DELETE RESTRICT per ADR-007)
+	_, err := db.Exec("PRAGMA foreign_keys = ON")
+	if err != nil {
+		return fmt.Errorf("failed to enable foreign keys: %w", err)
+	}
+
 	// vault_keys table (encrypted DEK + salt per ADR-003)
-	_, err := db.Exec(`
+	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS vault_keys (
 			id INTEGER PRIMARY KEY,
 			salt BLOB NOT NULL,
@@ -801,9 +820,54 @@ func (v *Vault) createTables(db *sql.DB) error {
 		return err
 	}
 
+	// folders table (per ADR-007: Folder Feature)
+	// - id: UUID primary key
+	// - name: display name (no "/" allowed)
+	// - parent_id: NULL for root, UUID for nested
+	// - icon/color: optional visual customization
+	// - sort_order: for manual ordering
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS folders (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			parent_id TEXT,
+			icon TEXT,
+			color TEXT,
+			sort_order INTEGER DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (parent_id) REFERENCES folders(id) ON DELETE RESTRICT,
+			CHECK (name NOT LIKE '%/%')
+		)
+	`)
+	if err != nil {
+		return err
+	}
+
+	// Folder indexes
+	_, err = db.Exec("CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_id)")
+	if err != nil {
+		return err
+	}
+
+	// Unique index for nested folder names (case-insensitive)
+	// Per ADR-007: Unique (name, parent_id) constraint with case-insensitive matching
+	_, err = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_folders_name_parent ON folders(name COLLATE NOCASE, parent_id) WHERE parent_id IS NOT NULL`)
+	if err != nil {
+		return err
+	}
+
+	// Unique index for root folder names (NULL parent)
+	// SQLite requires separate index for NULL values in partial index
+	_, err = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_folders_root_name ON folders(name COLLATE NOCASE) WHERE parent_id IS NULL`)
+	if err != nil {
+		return err
+	}
+
 	// secrets table (hybrid approach: encrypted metadata JSON + plaintext search fields)
 	// Per project-proposal-ja.md Phase 0: Metadata support (notes/url/tags/expires_at)
 	// Per ADR-002 Phase 2.5: Multi-field secrets support
+	// Per ADR-007 Phase 2c-X2: Folder support
 	// - encrypted_key: encrypted key name (nonce prepended)
 	// - encrypted_value: legacy single value (nonce prepended) - kept for backward compatibility
 	// - encrypted_fields: encrypted JSON map of Field structs (Phase 2.5+)
@@ -811,6 +875,7 @@ func (v *Vault) createTables(db *sql.DB) error {
 	// - encrypted_metadata: encrypted notes/url JSON
 	// - schema: plaintext schema name (reserved for Phase 3)
 	// - field_count: plaintext field count for MCP secret_list (Phase 2.5+)
+	// - folder_id: reference to folder (Phase 2c-X2, NULL = unfiled)
 	// - tags, expires_at: plaintext for searchability
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS secrets (
@@ -823,12 +888,19 @@ func (v *Vault) createTables(db *sql.DB) error {
 			encrypted_metadata BLOB,
 			schema TEXT,
 			field_count INTEGER DEFAULT 1,
+			folder_id TEXT REFERENCES folders(id) ON DELETE RESTRICT,
 			tags TEXT,
 			expires_at TIMESTAMP,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)
 	`)
+	if err != nil {
+		return err
+	}
+
+	// Secret folder index
+	_, err = db.Exec("CREATE INDEX IF NOT EXISTS idx_secrets_folder ON secrets(folder_id)")
 	if err != nil {
 		return err
 	}
@@ -1161,9 +1233,10 @@ func (v *Vault) SetSecret(key string, entry *SecretEntry) error {
 
 	// UPSERT: update if key exists, insert otherwise
 	// Store both legacy format (encrypted_value) and new format (encrypted_fields)
+	// Per ADR-007: folder_id is stored as plaintext reference to folders table
 	_, err = tx.Exec(`
-		INSERT INTO secrets (key_hash, encrypted_key, encrypted_value, encrypted_fields, encrypted_bindings, encrypted_metadata, schema, field_count, tags, expires_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		INSERT INTO secrets (key_hash, encrypted_key, encrypted_value, encrypted_fields, encrypted_bindings, encrypted_metadata, schema, field_count, folder_id, tags, expires_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(key_hash) DO UPDATE SET
 			encrypted_key = excluded.encrypted_key,
 			encrypted_value = excluded.encrypted_value,
@@ -1172,10 +1245,11 @@ func (v *Vault) SetSecret(key string, entry *SecretEntry) error {
 			encrypted_metadata = excluded.encrypted_metadata,
 			schema = excluded.schema,
 			field_count = excluded.field_count,
+			folder_id = excluded.folder_id,
 			tags = excluded.tags,
 			expires_at = excluded.expires_at,
 			updated_at = CURRENT_TIMESTAMP
-	`, keyHash, encryptedKey, encryptedValue, encryptedFields, encryptedBindings, encryptedMetadata, entry.Schema, fieldCount, tagsStr, expiresAt)
+	`, keyHash, encryptedKey, encryptedValue, encryptedFields, encryptedBindings, encryptedMetadata, entry.Schema, fieldCount, entry.FolderID, tagsStr, expiresAt)
 	if err != nil {
 		_ = v.audit.LogError(audit.OpSecretSet, audit.SourceCLI, key, "DB_ERROR", err.Error())
 		return fmt.Errorf("vault: failed to save secret: %w", err)
@@ -1213,15 +1287,16 @@ func (v *Vault) GetSecret(key string) (*SecretEntry, error) {
 	// Get all fields from database (including new multi-field columns)
 	var encryptedValue, encryptedFields, encryptedBindings, encryptedMetadata []byte
 	var schema sql.NullString
+	var folderID sql.NullString
 	var tagsStr sql.NullString
 	var expiresAt sql.NullTime
 	var createdAt, updatedAt time.Time
 
 	err := v.db.QueryRow(`
-		SELECT encrypted_value, encrypted_fields, encrypted_bindings, encrypted_metadata, schema, tags, expires_at, created_at, updated_at
+		SELECT encrypted_value, encrypted_fields, encrypted_bindings, encrypted_metadata, schema, folder_id, tags, expires_at, created_at, updated_at
 		FROM secrets WHERE key_hash = ?`,
 		keyHash,
-	).Scan(&encryptedValue, &encryptedFields, &encryptedBindings, &encryptedMetadata, &schema, &tagsStr, &expiresAt, &createdAt, &updatedAt)
+	).Scan(&encryptedValue, &encryptedFields, &encryptedBindings, &encryptedMetadata, &schema, &folderID, &tagsStr, &expiresAt, &createdAt, &updatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			_ = v.audit.LogError(audit.OpSecretGet, audit.SourceCLI, key, "NOT_FOUND", "secret not found")
@@ -1234,6 +1309,11 @@ func (v *Vault) GetSecret(key string) (*SecretEntry, error) {
 		Key:       key,
 		CreatedAt: createdAt,
 		UpdatedAt: updatedAt,
+	}
+
+	// Set folder ID if present (Phase 2c-X2)
+	if folderID.Valid {
+		entry.FolderID = &folderID.String
 	}
 
 	// Decrypt fields (new format) or value (legacy format)
@@ -1409,16 +1489,20 @@ func (v *Vault) DeleteSecret(key string) error {
 // Multi-field support (Phase 2.5):
 // - Also reads schema column for Phase 3 compatibility
 // - Does NOT decrypt fields/bindings (not needed for list operations)
+//
+// Folder support (Phase 2c-X2):
+// - Reads folder_id for folder-based filtering and display
 func (v *Vault) scanSecretEntryRowWithMetadata(rows *sql.Rows) (*SecretEntry, error) {
 	var encryptedKey []byte
 	var encryptedMetadata []byte
 	var schema sql.NullString
 	var fieldCount sql.NullInt64
+	var folderID sql.NullString
 	var tagsStr sql.NullString
 	var expiresAt sql.NullTime
 	var createdAt, updatedAt time.Time
 
-	if err := rows.Scan(&encryptedKey, &encryptedMetadata, &schema, &fieldCount, &tagsStr, &expiresAt,
+	if err := rows.Scan(&encryptedKey, &encryptedMetadata, &schema, &fieldCount, &folderID, &tagsStr, &expiresAt,
 		&createdAt, &updatedAt); err != nil {
 		return nil, fmt.Errorf("vault: failed to scan row: %w", err)
 	}
@@ -1444,6 +1528,11 @@ func (v *Vault) scanSecretEntryRowWithMetadata(rows *sql.Rows) (*SecretEntry, er
 	// Set schema if present
 	if schema.Valid {
 		entry.Schema = schema.String
+	}
+
+	// Set folder ID if present (Phase 2c-X2)
+	if folderID.Valid {
+		entry.FolderID = &folderID.String
 	}
 
 	// Decrypt metadata if present (small data - notes/URL, not credentials)
@@ -1488,7 +1577,7 @@ func (v *Vault) ListSecretsWithMetadata() ([]*SecretEntry, error) {
 	}
 
 	rows, err := v.db.Query(`
-		SELECT encrypted_key, encrypted_metadata, schema, field_count, tags, expires_at, created_at, updated_at
+		SELECT encrypted_key, encrypted_metadata, schema, field_count, folder_id, tags, expires_at, created_at, updated_at
 		FROM secrets
 		ORDER BY created_at`)
 	if err != nil {
@@ -1526,7 +1615,7 @@ func (v *Vault) ListSecretsByTag(tag string) ([]*SecretEntry, error) {
 	// This searches for the tag within the JSON array string
 	// Include encrypted_metadata and schema for HasNotes/HasURL support and Phase 3
 	rows, err := v.db.Query(`
-		SELECT encrypted_key, encrypted_metadata, schema, field_count, tags, expires_at, created_at, updated_at
+		SELECT encrypted_key, encrypted_metadata, schema, field_count, folder_id, tags, expires_at, created_at, updated_at
 		FROM secrets
 		WHERE tags LIKE ?
 		ORDER BY created_at`,
@@ -1572,7 +1661,7 @@ func (v *Vault) ListExpiringSecrets(within time.Duration) ([]*SecretEntry, error
 
 	// Include encrypted_metadata and schema for HasNotes/HasURL support and Phase 3
 	rows, err := v.db.Query(`
-		SELECT encrypted_key, encrypted_metadata, schema, field_count, tags, expires_at, created_at, updated_at
+		SELECT encrypted_key, encrypted_metadata, schema, field_count, folder_id, tags, expires_at, created_at, updated_at
 		FROM secrets
 		WHERE expires_at IS NOT NULL AND expires_at <= ?
 		ORDER BY expires_at`,

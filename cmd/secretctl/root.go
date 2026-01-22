@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -56,6 +57,10 @@ var (
 	setBindings []string // --binding ENV=field (can be repeated)
 	setTemplate string   // --template name
 
+	// Folder support (Phase 2c-X2)
+	setFolder   string // --folder path
+	setFolderID string // --folder-id UUID   // --template name
+
 	// Get field support
 	getField      string // --field name (get specific field)
 	getShowFields bool   // --fields (list all fields)
@@ -65,6 +70,10 @@ var (
 var (
 	listTag      string
 	listExpiring string
+
+	// Folder support (Phase 2c-X2)
+	listFolder   string // --folder path
+	listFolderID string // --folder-id UUID
 )
 
 // Metadata flags for get command
@@ -102,6 +111,7 @@ func init() {
 	rootCmd.AddCommand(deleteCmd)
 	rootCmd.AddCommand(auditCmd)
 	rootCmd.AddCommand(passwordCmd)
+	rootCmd.AddCommand(folderCmd)
 
 	// Add metadata flags to set command
 	setCmd.Flags().StringVar(&setNotes, "notes", "", "Add notes to the secret")
@@ -114,9 +124,17 @@ func init() {
 	setCmd.Flags().StringArrayVar(&setBindings, "binding", nil, "Set env binding (ENV_VAR=field, can be repeated)")
 	setCmd.Flags().StringVar(&setTemplate, "template", "", "Use template (login, database, api, ssh)")
 
+	// Folder flags for set command (Phase 2c-X2)
+	setCmd.Flags().StringVar(&setFolder, "folder", "", "Folder path (e.g., Work/APIs)")
+	setCmd.Flags().StringVar(&setFolderID, "folder-id", "", "Folder ID (UUID)")
+
 	// Add metadata flags to list command
 	listCmd.Flags().StringVar(&listTag, "tag", "", "Filter by tag")
 	listCmd.Flags().StringVar(&listExpiring, "expiring", "", "Show secrets expiring within duration (e.g., 7d)")
+
+	// Folder flags for list command (Phase 2c-X2)
+	listCmd.Flags().StringVar(&listFolder, "folder", "", "Filter by folder path")
+	listCmd.Flags().StringVar(&listFolderID, "folder-id", "", "Filter by folder ID (UUID)")
 
 	// Add metadata flags to get command
 	getCmd.Flags().BoolVar(&getShowMetadata, "show-metadata", false, "Show metadata with the secret")
@@ -285,6 +303,13 @@ Available templates: login, database, api, ssh`,
 			expiresAt := time.Now().Add(duration)
 			entry.ExpiresAt = &expiresAt
 		}
+
+		// Add folder (Phase 2c-X2)
+		folderID, err := resolveFolderFromFlags()
+		if err != nil {
+			return err
+		}
+		entry.FolderID = folderID
 
 		// 3. Save secret
 		if err := v.SetSecret(key, entry); err != nil {
@@ -590,7 +615,26 @@ var listCmd = &cobra.Command{
 		var entries []*vault.SecretEntry
 		var err error
 
-		if listTag != "" {
+		// Handle folder filter (Phase 2c-X2)
+		if listFolder != "" || listFolderID != "" {
+			var folderID string
+			if listFolderID != "" {
+				folderID = listFolderID
+			} else {
+				folder, folderErr := v.GetFolderByPath(listFolder)
+				if folderErr != nil {
+					if errors.Is(folderErr, vault.ErrFolderNotFound) || errors.Is(folderErr, vault.ErrFolderPathNotFound) {
+						return fmt.Errorf("folder not found: %s", listFolder)
+					}
+					return fmt.Errorf("failed to find folder: %w", folderErr)
+				}
+				folderID = folder.ID
+			}
+			entries, err = v.ListSecretsInFolder(&folderID, false)
+			if err != nil {
+				return fmt.Errorf("failed to list secrets in folder: %w", err)
+			}
+		} else if listTag != "" {
 			// Filter by tag
 			entries, err = v.ListSecretsByTag(listTag)
 			if err != nil {
@@ -638,6 +682,9 @@ var listCmd = &cobra.Command{
 			}
 			if entry.ExpiresAt != nil {
 				line += fmt.Sprintf(" (expires: %s)", entry.ExpiresAt.Format("2006-01-02"))
+			}
+			if entry.FolderID != nil {
+				line += fmt.Sprintf(" {%s}", formatFolderPath(entry.FolderID))
 			}
 			fmt.Println(line)
 		}

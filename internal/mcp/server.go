@@ -153,6 +153,25 @@ func (s *Server) registerTools() {
 		Name:        "security_score",
 		Description: "Get the security health score of your vault including password strength, duplicate detection, and expiration status. Returns a score from 0-100 with issue details and suggestions.",
 	}, s.handleSecurityScore)
+
+	// Phase 2c-X2: Folder MCP tools
+	// folder_list - List folders with metadata
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "folder_list",
+		Description: "List all folders with metadata including secret count and subfolder count. Use parent_id to list children of a specific folder.",
+	}, s.handleFolderList)
+
+	// folder_create - Create a new folder
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "folder_create",
+		Description: "Create a new folder for organizing secrets. Folder names cannot contain '/'.",
+	}, s.handleFolderCreate)
+
+	// folder_move_secret - Move a secret to a folder
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "folder_move_secret",
+		Description: "Move a secret to a different folder. Set folder_id to null to unfile the secret.",
+	}, s.handleFolderMoveSecret)
 }
 
 // Run starts the MCP server using stdio transport.

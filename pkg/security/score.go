@@ -298,7 +298,6 @@ func (c *Calculator) calculateExpirationScore(secrets []*vault.SecretEntry, incl
 		secretsWithExpiration++
 		expiresAt := *entry.ExpiresAt
 
-		//nolint:gocritic // if-else chain is clearer for time comparisons
 		if expiresAt.Before(now) {
 			// Already expired
 			issue := SecurityIssue{

@@ -54,6 +54,7 @@ linters-settings:
       - rangeValCopy
       - stringXbytes
       - unnamedResult
+      - ifElseChain
 
   goconst:
     min-len: 3
@@ -123,6 +124,7 @@ issues:
         - goconst
         - errcheck
         - gocyclo
+        - unparam
 
     # Exclude known false positives
     - path: pkg/crypto/crypto.go
@@ -186,6 +188,11 @@ issues:
     - path: pkg/importer/
       linters:
         - unparam
+
+    # sqlclosecheck: folder.go uses manual Close() in loops where defer isn't appropriate
+    - path: pkg/vault/folder\.go
+      linters:
+        - sqlclosecheck
 
   max-issues-per-linter: 50
   max-same-issues: 10

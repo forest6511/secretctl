@@ -18,8 +18,10 @@ const (
 	SchemaVersion3 = 3
 	// SchemaVersion4 adds salt column to vault_keys (Phase 2c-P: Password Change)
 	SchemaVersion4 = 4
+	// SchemaVersion5 adds folders table and folder_id column (Phase 2c-X2: Folder Feature)
+	SchemaVersion5 = 5
 	// CurrentSchemaVersion is the current schema version
-	CurrentSchemaVersion = SchemaVersion4
+	CurrentSchemaVersion = SchemaVersion5
 )
 
 // getSchemaVersion returns the current schema version from the database.
@@ -99,6 +101,12 @@ func migrateSchema(db *sql.DB, vaultPath string) error {
 	if version < SchemaVersion4 {
 		if err := migrateToV4(db, vaultPath); err != nil {
 			return fmt.Errorf("vault: migration to v4 failed: %w", err)
+		}
+	}
+
+	if version < SchemaVersion5 {
+		if err := migrateToV5(db); err != nil {
+			return fmt.Errorf("vault: migration to v5 failed: %w", err)
 		}
 	}
 
@@ -299,6 +307,116 @@ func migrateToV4(db *sql.DB, vaultPath string) error {
 
 	// Update schema version
 	_, err = tx.Exec("INSERT OR REPLACE INTO schema_version (version) VALUES (?)", SchemaVersion4)
+	if err != nil {
+		return fmt.Errorf("failed to set schema version: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit migration: %w", err)
+	}
+
+	return nil
+}
+
+// migrateToV5 adds folders table and folder_id column for folder feature (ADR-007).
+// This migration:
+// 1. Creates folders table with hierarchical structure
+// 2. Adds folder_id column to secrets table
+// 3. Creates indexes for efficient queries
+// 4. Updates schema version
+//
+// Note: Existing secrets remain "unfiled" (folder_id = NULL) after migration.
+func migrateToV5(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Enable foreign keys for this connection (required for ON DELETE RESTRICT)
+	_, err = tx.Exec("PRAGMA foreign_keys = ON")
+	if err != nil {
+		return fmt.Errorf("failed to enable foreign keys: %w", err)
+	}
+
+	// Check if folders table already exists (idempotent migration)
+	var tableName string
+	err = tx.QueryRow(`
+		SELECT name FROM sqlite_master
+		WHERE type='table' AND name='folders'
+	`).Scan(&tableName)
+
+	if err == sql.ErrNoRows {
+		// Create folders table per ADR-007
+		_, err = tx.Exec(`
+			CREATE TABLE folders (
+				id TEXT PRIMARY KEY,
+				name TEXT NOT NULL,
+				parent_id TEXT,
+				icon TEXT,
+				color TEXT,
+				sort_order INTEGER DEFAULT 0,
+				created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (parent_id) REFERENCES folders(id) ON DELETE RESTRICT,
+				CHECK (name NOT LIKE '%/%')
+			)
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to create folders table: %w", err)
+		}
+
+		// Create index for parent lookups
+		_, err = tx.Exec("CREATE INDEX idx_folders_parent ON folders(parent_id)")
+		if err != nil {
+			return fmt.Errorf("failed to create idx_folders_parent: %w", err)
+		}
+
+		// Create unique index for name within same parent (non-NULL parent)
+		_, err = tx.Exec(`
+			CREATE UNIQUE INDEX idx_folders_name_parent ON folders(name COLLATE NOCASE, parent_id)
+			WHERE parent_id IS NOT NULL
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to create idx_folders_name_parent: %w", err)
+		}
+
+		// Create unique index for root folder names (NULL parent)
+		_, err = tx.Exec(`
+			CREATE UNIQUE INDEX idx_folders_root_name ON folders(name COLLATE NOCASE)
+			WHERE parent_id IS NULL
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to create idx_folders_root_name: %w", err)
+		}
+	} else if err != nil {
+		return fmt.Errorf("failed to check folders table: %w", err)
+	}
+
+	// Check if folder_id column already exists in secrets
+	columns, err := getTableColumns(tx, "secrets")
+	if err != nil {
+		return fmt.Errorf("failed to get secrets columns: %w", err)
+	}
+
+	// Add folder_id column if it doesn't exist
+	if !columns["folder_id"] {
+		// Note: SQLite doesn't support adding foreign key constraints via ALTER TABLE
+		// The constraint is enforced at application level for existing tables
+		_, err = tx.Exec("ALTER TABLE secrets ADD COLUMN folder_id TEXT")
+		if err != nil {
+			return fmt.Errorf("failed to add folder_id column: %w", err)
+		}
+
+		// Create index for folder lookups
+		_, err = tx.Exec("CREATE INDEX idx_secrets_folder ON secrets(folder_id)")
+		if err != nil {
+			return fmt.Errorf("failed to create idx_secrets_folder: %w", err)
+		}
+	}
+
+	// Update schema version
+	_, err = tx.Exec("INSERT OR REPLACE INTO schema_version (version) VALUES (?)", SchemaVersion5)
 	if err != nil {
 		return fmt.Errorf("failed to set schema version: %w", err)
 	}
