@@ -177,6 +177,11 @@ issues:
         - goconst
       text: "genesis"
 
+    # goconst: import command uses string literals that are clear in context
+    - path: cmd/secretctl/import
+      linters:
+        - goconst
+
     # unparam: Importer functions maintain consistent signatures for interface compliance
     - path: pkg/importer/
       linters:
