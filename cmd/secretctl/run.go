@@ -37,6 +37,12 @@ const (
 	ExitSignalBase      = 128
 )
 
+// Security constants for rate limiting
+const (
+	maxOutputLength = 5120 // 5KB max output
+	maxOutputLines  = 200  // Max 200 lines
+)
+
 func init() {
 	rootCmd.AddCommand(runCmd)
 
@@ -91,6 +97,19 @@ Examples:
 
 // executeRun performs the main run command logic
 func executeRun(commandArgs []string) error {
+	// SECURITY: Block --no-sanitize flag to prevent bypass of output sanitization
+	if runNoSanitize {
+		return errors.New("DENIED: --no-sanitize is not allowed in agent mode")
+	}
+
+	// SECURITY: Block global wildcard to enforce least privilege
+	for _, key := range runKeys {
+		cleaned := strings.Trim(strings.TrimSpace(key), "\"'")
+		if cleaned == "*" {
+			return errors.New("DENIED: global wildcard -k \"*\" is not allowed")
+		}
+	}
+
 	// 1. Unlock vault
 	if err := ensureUnlocked(); err != nil {
 		return err
@@ -516,9 +535,12 @@ func (e *exitError) ExitCode() int {
 // It handles buffer boundaries by keeping an overlap buffer to detect
 // secrets that span across read boundaries.
 type outputSanitizer struct {
-	secrets      []secretData
-	maxSecretLen int                 // Length of longest secret (for overlap calculation)
-	replacements []secretReplacement // Pre-computed replacements for efficiency
+	secrets       []secretData
+	maxSecretLen  int                 // Length of longest secret (for overlap calculation)
+	replacements  []secretReplacement // Pre-computed replacements for efficiency
+	totalBytes    int                 // Total bytes written for rate limiting
+	totalLines    int                 // Total lines written for rate limiting
+	rateExceeded  bool                // Flag to stop output after rate limit
 }
 
 // secretReplacement holds pre-computed replacement data
@@ -577,11 +599,17 @@ func isBinaryData(data []byte) bool {
 
 // copy reads from src, sanitizes, and writes to dst
 // It maintains an overlap buffer to handle secrets spanning read boundaries.
+// Implements rate limiting to prevent mass exfiltration.
 func (s *outputSanitizer) copy(dst io.Writer, src io.Reader) {
 	buf := make([]byte, 32*1024) // 32KB buffer
 	var overlap []byte           // Buffer to hold potential partial secret from previous read
 
 	for {
+		// SECURITY: Check rate limits before processing more data
+		if s.rateExceeded {
+			return
+		}
+
 		n, readErr := src.Read(buf)
 		if n > 0 {
 			// Combine overlap from previous read with new data
@@ -619,6 +647,21 @@ func (s *outputSanitizer) copy(dst io.Writer, src io.Reader) {
 			}
 
 			if writeLen > 0 {
+				// SECURITY: Rate limiting - check before writing
+				s.totalBytes += writeLen
+				s.totalLines += bytes.Count(data[:writeLen], []byte{'\n'})
+
+				if s.totalBytes > maxOutputLength {
+					_, _ = dst.Write([]byte(fmt.Sprintf("\n[RATE LIMIT] Output exceeds maximum of %d bytes\n", maxOutputLength)))
+					s.rateExceeded = true
+					return
+				}
+				if s.totalLines > maxOutputLines {
+					_, _ = dst.Write([]byte(fmt.Sprintf("\n[RATE LIMIT] Output exceeds maximum of %d lines\n", maxOutputLines)))
+					s.rateExceeded = true
+					return
+				}
+
 				_, _ = dst.Write(data[:writeLen])
 			}
 
@@ -633,7 +676,7 @@ func (s *outputSanitizer) copy(dst io.Writer, src io.Reader) {
 
 		if readErr != nil {
 			// Write any remaining overlap on EOF
-			if len(overlap) > 0 {
+			if len(overlap) > 0 && !s.rateExceeded {
 				_, _ = dst.Write(overlap)
 			}
 			break
