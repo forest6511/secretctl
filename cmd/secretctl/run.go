@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/forest6511/secretctl/internal/mcp"
+	"github.com/forest6511/secretctl/internal/sanitize"
 )
 
 // Run command flags
@@ -685,26 +686,30 @@ func (s *outputSanitizer) copy(dst io.Writer, src io.Reader) {
 }
 
 // sanitize replaces secret values with [REDACTED:key]
-// Uses a single-pass approach for better performance when multiple secrets exist
+// Uses multi-layer sanitization to detect encoded and fragmented secrets
 func (s *outputSanitizer) sanitize(data []byte) []byte {
 	if len(s.replacements) == 0 {
 		return data
 	}
 
-	// For single secret, use simple replacement
-	if len(s.replacements) == 1 {
-		return bytes.ReplaceAll(data, s.replacements[0].secret, s.replacements[0].placeholder)
+	// Build secrets map for multi-layer sanitization
+	// Key is the env name (for placeholder), value is the secret
+	secrets := make(map[string]string)
+	for _, r := range s.replacements {
+		// Extract key name from placeholder [REDACTED:KEY]
+		placeholder := string(r.placeholder)
+		// placeholder is already in format [REDACTED:KEY]
+		keyName := placeholder
+		if strings.HasPrefix(placeholder, "[REDACTED:") && strings.HasSuffix(placeholder, "]") {
+			keyName = placeholder[10 : len(placeholder)-1]
+		}
+		secrets[keyName] = string(r.secret)
 	}
 
-	// For multiple secrets, use a more efficient approach
-	// Build result incrementally to avoid multiple full scans
-	result := data
-	for _, r := range s.replacements {
-		if bytes.Contains(result, r.secret) {
-			result = bytes.ReplaceAll(result, r.secret, r.placeholder)
-		}
-	}
-	return result
+	// Use multi-layer sanitization (exact match + base64 + hex + fragments)
+	result := sanitize.SanitizeMultiLayer(string(data), secrets, sanitize.DefaultConfig)
+
+	return []byte(result)
 }
 
 // resolveEnvAliases resolves key patterns using environment aliases from mcp-policy.yaml.
