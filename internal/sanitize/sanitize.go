@@ -30,8 +30,8 @@ var DefaultConfig = Config{
 
 // Pre-compiled regex patterns for detection
 var (
-	base64Pattern = regexp.MustCompile(`[A-Za-z0-9+/]{20,}={0,2}`)
-	hexPattern    = regexp.MustCompile(`[0-9a-fA-F]{40,}`)
+	base64Pattern    = regexp.MustCompile(`[A-Za-z0-9+/]{20,}={0,2}`)
+	hexPattern       = regexp.MustCompile(`[0-9a-fA-F]{40,}`)
 	fragmentPatterns = []*regexp.Regexp{
 		regexp.MustCompile(`PART\d*:\s*(\S+)`),
 		regexp.MustCompile(`\d+:\s*([a-zA-Z0-9\-]{2,4})`),

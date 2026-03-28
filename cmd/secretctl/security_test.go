@@ -26,38 +26,38 @@ func TestSecurity_NoSanitizeBlocked(t *testing.T) {
 // TestSecurity_GlobalWildcardBlocked tests that -k "*" is blocked
 func TestSecurity_GlobalWildcardBlocked(t *testing.T) {
 	testCases := []struct {
-		name      string
-		keys      []string
+		name        string
+		keys        []string
 		shouldBlock bool
 	}{
 		{
-			name:      "exact wildcard",
-			keys:      []string{"*"},
+			name:        "exact wildcard",
+			keys:        []string{"*"},
 			shouldBlock: true,
 		},
 		{
-			name:      "wildcard with quotes",
-			keys:      []string{`"*"`},
+			name:        "wildcard with quotes",
+			keys:        []string{`"*"`},
 			shouldBlock: true,
 		},
 		{
-			name:      "wildcard with single quotes",
-			keys:      []string{`'*'`},
+			name:        "wildcard with single quotes",
+			keys:        []string{`'*'`},
 			shouldBlock: true,
 		},
 		{
-			name:      "wildcard with spaces",
-			keys:      []string{` " * " `},
+			name:        "wildcard with spaces",
+			keys:        []string{` " * " `},
 			shouldBlock: true,
 		},
 		{
-			name:      "valid pattern",
-			keys:      []string{"API_*"},
+			name:        "valid pattern",
+			keys:        []string{"API_*"},
 			shouldBlock: false,
 		},
 		{
-			name:      "valid exact key",
-			keys:      []string{"API_KEY"},
+			name:        "valid exact key",
+			keys:        []string{"API_KEY"},
 			shouldBlock: false,
 		},
 	}
@@ -150,7 +150,7 @@ func TestSecurity_OutputSanitizerRateLimit(t *testing.T) {
 // TestSecurity_ShortSecretsNotSanitized tests that short secrets are not sanitized
 func TestSecurity_ShortSecretsNotSanitized(t *testing.T) {
 	secrets := []secretData{
-		{key: "SHORT", value: []byte("abc")}, // 3 bytes - too short
+		{key: "SHORT", value: []byte("abc")},               // 3 bytes - too short
 		{key: "VALID", value: []byte("test-secret-12345")}, // Valid length
 	}
 

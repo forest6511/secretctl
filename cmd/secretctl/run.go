@@ -536,12 +536,12 @@ func (e *exitError) ExitCode() int {
 // It handles buffer boundaries by keeping an overlap buffer to detect
 // secrets that span across read boundaries.
 type outputSanitizer struct {
-	secrets       []secretData
-	maxSecretLen  int                 // Length of longest secret (for overlap calculation)
-	replacements  []secretReplacement // Pre-computed replacements for efficiency
-	totalBytes    int                 // Total bytes written for rate limiting
-	totalLines    int                 // Total lines written for rate limiting
-	rateExceeded  bool                // Flag to stop output after rate limit
+	secrets      []secretData
+	maxSecretLen int                 // Length of longest secret (for overlap calculation)
+	replacements []secretReplacement // Pre-computed replacements for efficiency
+	totalBytes   int                 // Total bytes written for rate limiting
+	totalLines   int                 // Total lines written for rate limiting
+	rateExceeded bool                // Flag to stop output after rate limit
 }
 
 // secretReplacement holds pre-computed replacement data

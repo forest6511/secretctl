@@ -131,18 +131,18 @@ func TestSanitizeMultiLayer_Fragments(t *testing.T) {
 	}
 
 	tests := []struct {
-		name        string
-		input       string
+		name         string
+		input        string
 		shouldRedact bool
 	}{
 		{
-			name:        "PART pattern fragments (not enough matches)",
-			input:       "PART1: sk- PART2: test- PART3: 123",
+			name:         "PART pattern fragments (not enough matches)",
+			input:        "PART1: sk- PART2: test- PART3: 123",
 			shouldRedact: false, // Only 3 matches, need 10+
 		},
 		{
-			name:        "many fragments could trigger",
-			input:       "PART1:a PART2:b PART3:c PART4:d PART5:e PART6:f PART7:g PART8:h PART9:i PART10:j PART11:k",
+			name:         "many fragments could trigger",
+			input:        "PART1:a PART2:b PART3:c PART4:d PART5:e PART6:f PART7:g PART8:h PART9:i PART10:j PART11:k",
 			shouldRedact: false, // Fragments don't reconstruct the secret
 		},
 	}
