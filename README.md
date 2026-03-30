@@ -132,6 +132,10 @@ Windows SmartScreen may show a warning. To allow:
 1. Click "More info"
 2. Click "Run anyway"
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/forest6511-secretctl).
+
 ## Quick Start
 
 ### 1. Initialize your vault
