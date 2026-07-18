@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -18,11 +19,12 @@ type EnvAliasMapping struct {
 
 // Policy represents the MCP policy configuration per mcp-design-ja.md §4
 type Policy struct {
-	Version         int                          `yaml:"version"`
-	DefaultAction   string                       `yaml:"default_action"`
-	DeniedCommands  []string                     `yaml:"denied_commands"`
-	AllowedCommands []string                     `yaml:"allowed_commands"`
-	EnvAliases      map[string][]EnvAliasMapping `yaml:"env_aliases"`
+	Version            int                          `yaml:"version"`
+	DefaultAction      string                       `yaml:"default_action"`
+	DeniedCommands     []string                     `yaml:"denied_commands"`
+	AllowedCommands    []string                     `yaml:"allowed_commands"`
+	TrustedDirectories []string                     `yaml:"trusted_directories"`
+	EnvAliases         map[string][]EnvAliasMapping `yaml:"env_aliases"`
 }
 
 // PolicyFileName is the name of the policy file
@@ -58,6 +60,12 @@ var ErrCommandNotFound = errors.New("command not found")
 // TrustedDirectories are the only directories from which commands can be executed.
 // This prevents PATH manipulation attacks where a malicious binary is placed
 // earlier in PATH to bypass the allowlist.
+//
+// This list is the compiled-in default; operators extend it at MCP server startup
+// via the trusted_directories field in mcp-policy.yaml and/or the
+// SECRETCTL_TRUSTED_DIRS environment variable (see mergeTrustedDirectories).
+// Adding more OS-specific paths here is discouraged — prefer the operator-side
+// extension mechanisms so the list does not grow unbounded.
 var TrustedDirectories = []string{
 	"/usr/bin",
 	"/bin",
@@ -65,6 +73,71 @@ var TrustedDirectories = []string{
 	"/sbin",
 	"/usr/local/bin",
 	"/opt/homebrew/bin", // macOS Homebrew
+}
+
+// EnvTrustedDirs is the environment variable used to extend the trusted-directory
+// allowlist at MCP server startup. It is read once from the server process's own
+// environment (see mergeTrustedDirectories), which the MCP client — an AI agent
+// speaking over stdio — does not control. This makes it an operator-side,
+// tamper-resistant knob, complementing the trusted_directories field in
+// mcp-policy.yaml (which itself is protected by the TOCTOU-safe loader: mode
+// 0600, owner == current user, O_NOFOLLOW). Entries are separated by the OS path
+// list separator (':' on Unix, ';' on Windows).
+const EnvTrustedDirs = "SECRETCTL_TRUSTED_DIRS"
+
+// mergeTrustedDirectories computes the effective trusted-directory list by
+// combining the compiled-in defaults (TrustedDirectories), any
+// trusted_directories entries declared in the policy, and the SECRETCTL_TRUSTED_DIRS
+// environment variable. Paths are cleaned and de-duplicated; entries from all
+// three sources are merged with equal standing.
+//
+// Non-absolute entries are skipped and reported via the returned warnings (the
+// caller is expected to log them), because a relative trusted path would be
+// ambiguous with respect to the process's working directory and unsafe to rely
+// on for PATH-hardening. A nil policy is handled (env-only operation).
+//
+// The returned slice is suitable for assignment to TrustedDirectories; the
+// caller (NewServer) installs it once at startup. Validation of policy-file
+// entries also happens earlier in ValidatePolicy, but this function defends in
+// depth against entries that bypass validation (e.g. env var, which is not
+// validated at load time).
+func mergeTrustedDirectories(policy *Policy) (dirs []string, warnings []string) {
+	seen := make(map[string]struct{})
+	add := func(raw string) {
+		s := strings.TrimSpace(raw)
+		if s == "" {
+			return
+		}
+		cleaned := filepath.Clean(s)
+		if !filepath.IsAbs(cleaned) {
+			warnings = append(warnings, fmt.Sprintf("ignoring non-absolute trusted directory entry: %q", raw))
+			return
+		}
+		if _, ok := seen[cleaned]; ok {
+			return
+		}
+		seen[cleaned] = struct{}{}
+		dirs = append(dirs, cleaned)
+	}
+
+	for _, d := range TrustedDirectories {
+		add(d)
+	}
+	if policy != nil {
+		for _, d := range policy.TrustedDirectories {
+			add(d)
+		}
+	}
+	for _, d := range filepath.SplitList(os.Getenv(EnvTrustedDirs)) {
+		add(d)
+	}
+
+	// Always return a non-nil slice so the package global is never left empty
+	// (which would unintentionally block every command).
+	if dirs == nil {
+		dirs = []string{}
+	}
+	return dirs, warnings
 }
 
 // LoadPolicy loads the MCP policy from the vault directory.
@@ -308,6 +381,19 @@ func (p *Policy) ValidatePolicy() error {
 
 	if p.DefaultAction != ActionDeny && p.DefaultAction != ActionAllow {
 		return fmt.Errorf("invalid default_action: %s (must be '%s' or '%s')", p.DefaultAction, ActionDeny, ActionAllow)
+	}
+
+	// trusted_directories must be absolute paths. A relative entry would be
+	// resolved relative to the server's working directory, which is ambiguous
+	// and defeats the PATH-hardening the allowlist exists to provide.
+	for _, d := range p.TrustedDirectories {
+		if strings.TrimSpace(d) == "" {
+			return fmt.Errorf("trusted_directories contains an empty entry")
+		}
+		cleaned := filepath.Clean(d)
+		if !filepath.IsAbs(cleaned) {
+			return fmt.Errorf("trusted_directories entry %q must be an absolute path", d)
+		}
 	}
 
 	return nil
