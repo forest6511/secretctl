@@ -65,9 +65,16 @@ func NewServer(opts *ServerOptions) (*Server, error) {
 	// defaults with operator-controlled sources: the trusted_directories field in
 	// mcp-policy.yaml (protected by the TOCTOU-safe loader) and the
 	// SECRETCTL_TRUSTED_DIRS env var (set in the operator's environment, outside
-	// the agent's reach). Computed once at startup; ResolveAndValidateCommand and
-	// helpers consult the package global for the lifetime of the process. Run
-	// unconditionally so env-only extension works even when policy load failed.
+	// the agent's reach). ResolveAndValidateCommand and helpers consult the
+	// package global for the lifetime of the process. Run unconditionally so
+	// env-only extension works even when policy load failed.
+	//
+	// Contract: this assignment must happen exactly once, before any secret_run
+	// request. The package global is read without synchronization on every command
+	// resolution, so a second NewServer call (e.g. from a future reconfiguration
+	// path) would race with readers and would also treat this call's merged result
+	// as the new "defaults", compounding across calls. Today NewServer is
+	// guaranteed single-call at process startup.
 	effectiveDirs, dirWarnings := mergeTrustedDirectories(policy)
 	for _, w := range dirWarnings {
 		log.Printf("warning: %s", w)

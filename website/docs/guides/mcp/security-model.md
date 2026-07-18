@@ -127,7 +127,7 @@ secretctl mcp-server
 
 The trusted-directory list is operator-controlled by design. The policy file is already the trust root (it controls `allowed_commands` and `default_action`), so extending it with `trusted_directories` does not expand the attack surface. The environment variable is read from the server process's own environment, which the MCP client — an AI agent speaking over stdio — cannot mutate. Do **not** place trusted-directory configuration somewhere the agent can write (e.g. a world-writable file without the loader's ownership/permission checks); that would defeat the PATH-hardening this allowlist exists to provide.
 
-Entries must be absolute paths; relative entries are rejected at policy-load time and skipped (with a logged warning) at server startup if they arrive via the environment variable.
+Entries must be absolute paths; relative entries — whether from the policy file or the environment variable — are skipped at server startup with a logged warning.
 
 ## Output Sanitization
 

@@ -1055,8 +1055,9 @@ func TestMergeTrustedDirectories_AllSourcesDedup(t *testing.T) {
 func TestMergeTrustedDirectories_RelativeRejected(t *testing.T) {
 	// Relative entries (from policy or env) must be skipped and reported as a
 	// warning, never silently accepted — a relative trusted path is ambiguous and
-	// unsafe for PATH-hardening.
-	t.Setenv(EnvTrustedDirs, "relative-env/bin:../escape")
+	// unsafe for PATH-hardening. Use filepath.ListSeparator so the test is
+	// portable across Unix (':') and Windows (';').
+	t.Setenv(EnvTrustedDirs, "relative-env/bin"+string(filepath.ListSeparator)+"../escape")
 	policy := &Policy{
 		TrustedDirectories: []string{"relative-policy/bin"},
 	}

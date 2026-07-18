@@ -97,10 +97,11 @@ const EnvTrustedDirs = "SECRETCTL_TRUSTED_DIRS"
 // on for PATH-hardening. A nil policy is handled (env-only operation).
 //
 // The returned slice is suitable for assignment to TrustedDirectories; the
-// caller (NewServer) installs it once at startup. Validation of policy-file
-// entries also happens earlier in ValidatePolicy, but this function defends in
-// depth against entries that bypass validation (e.g. env var, which is not
-// validated at load time).
+// caller (NewServer) installs it once at startup. This function is the
+// authoritative runtime check: LoadPolicy does not currently call ValidatePolicy,
+// so both policy-file and env entries are validated here (and only here) at
+// startup. ValidatePolicy mirrors the same absolute-path checks for use as a
+// standalone policy-validation utility (e.g. a future `secretctl policy validate`).
 func mergeTrustedDirectories(policy *Policy) (dirs []string, warnings []string) {
 	seen := make(map[string]struct{})
 	add := func(raw string) {
