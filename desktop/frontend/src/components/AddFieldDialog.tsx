@@ -138,7 +138,7 @@ export function AddFieldDialog({
                 className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded border-2 transition-all ${
                   inputType === 'text'
                     ? 'border-sky-500 bg-sky-50 text-sky-700'
-                    : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                    : 'border-border hover:border-muted-foreground text-muted-foreground'
                 }`}
                 data-testid="input-type-text"
               >
@@ -151,7 +151,7 @@ export function AddFieldDialog({
                 className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded border-2 transition-all ${
                   inputType === 'textarea'
                     ? 'border-sky-500 bg-sky-50 text-sky-700'
-                    : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                    : 'border-border hover:border-muted-foreground text-muted-foreground'
                 }`}
                 data-testid="input-type-textarea"
               >
