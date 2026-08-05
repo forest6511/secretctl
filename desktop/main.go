@@ -51,11 +51,18 @@ func main() {
 		runtime.Quit(app.ctx)
 	})
 
-	// Edit menu
-	editMenu := appMenu.AddSubmenu("Edit")
-	editMenu.AddText("Cut", keys.CmdOrCtrl("x"), nil)
-	editMenu.AddText("Copy", keys.CmdOrCtrl("c"), nil)
-	editMenu.AddText("Paste", keys.CmdOrCtrl("v"), nil)
+	// Edit menu (macOS only).
+	//
+	// Must be the role-backed menu. Declaring Cut/Copy/Paste via AddText with
+	// nil callbacks registers Cmd+X/C/V as application accelerators that
+	// consume the keystroke and then do nothing, so paste never reaches the
+	// webview and pasted secrets save as empty strings.
+	//
+	// On Windows/Linux the webview handles Ctrl+X/C/V itself, so no menu
+	// entry is needed there.
+	if goruntime.GOOS == "darwin" {
+		appMenu.Append(menu.EditMenu())
+	}
 
 	err := wails.Run(&options.App{
 		Title:     "secretctl",
