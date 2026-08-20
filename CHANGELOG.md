@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Operator-controlled trusted-directory allowlist for MCP `secret_run`** (#179)
+  - `trusted_directories` field in `mcp-policy.yaml` extends the trusted set, reusing the existing tamper-resistant loader guarantees (mode `0600`, owner == current user, `O_NOFOLLOW`)
+  - `SECRETCTL_TRUSTED_DIRS` environment variable for an operator-side, agent-tamper-resistant knob set outside the MCP client's reach
+  - Sources are merged with the compiled-in defaults at server startup, cleaned and de-duplicated; relative entries are rejected
+  - Documented the trusted-directory model in the MCP Security Model guide
+
 ## [0.8.8] - 2026-01-23
 
 ### Added

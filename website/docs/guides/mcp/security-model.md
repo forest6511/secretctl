@@ -86,6 +86,49 @@ denied_commands:
   - mkfs
 ```
 
+## Trusted Directories
+
+When `secret_run` executes a command, the binary is only allowed to run if it lives in a **trusted directory**. This hardens against PATH-manipulation attacks, where a malicious binary is planted earlier in `PATH` to shadow a legitimate tool and bypass the command allowlist. The check resolves symlinks first, so a symlink in a trusted directory that points at an untrusted location is still rejected — the *real* path of the binary is what must be trusted.
+
+### Default trusted directories
+
+The compiled-in defaults cover the standard system binary locations plus macOS Homebrew:
+
+- `/usr/bin`, `/bin`, `/usr/sbin`, `/sbin`, `/usr/local/bin`
+- `/opt/homebrew/bin` (macOS Homebrew)
+
+These are intentionally minimal. Rather than growing this list for every package manager and version (a losing game), extend it with the operator-controlled mechanisms below.
+
+### Extending the allowlist
+
+Operators can add trusted directories from two sources, both read once at MCP server startup. They are equally trusted and are merged with the defaults (cleaned and de-duplicated).
+
+**1. Policy file** — add a `trusted_directories` list to `mcp-policy.yaml`. This reuses the existing tamper-resistant loader guarantees for the policy file: file mode `0600`, owned by the current user, and `O_NOFOLLOW` to reject symlinks.
+
+```yaml
+version: 1
+default_action: deny
+allowed_commands:
+  - glab
+  - terraform
+trusted_directories:
+  - /home/linuxbrew/.linuxbrew/bin
+  - /opt/homebrew/bin
+```
+
+**2. Environment variable** — set `SECRETCTL_TRUSTED_DIRS` in the environment that launches `secretctl mcp-server`. Entries are separated by the OS path list separator (`:` on Unix, `;` on Windows).
+
+```bash
+export SECRETCTL_TRUSTED_DIRS=/home/linuxbrew/.linuxbrew/bin
+secretctl mcp-server
+```
+
+### Threat-model note
+
+The trusted-directory list is operator-controlled by design. The policy file is already the trust root (it controls `allowed_commands` and `default_action`), so extending it with `trusted_directories` does not expand the attack surface. The environment variable is read from the server process's own environment, which the MCP client — an AI agent speaking over stdio — cannot mutate. Do **not** place trusted-directory configuration somewhere the agent can write (e.g. a world-writable file without the loader's ownership/permission checks); that would defeat the PATH-hardening this allowlist exists to provide.
+
+Entries must be absolute paths; relative entries — whether from the policy file or the environment variable — are skipped at server startup with a logged warning.
+
 ## Output Sanitization
 
 When a command is executed via `secret_run`, the output is automatically scanned for secret values. Any matches are replaced with `[REDACTED:key]`.

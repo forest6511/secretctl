@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -121,6 +122,63 @@ allowed_commands:
 	// Should default to deny
 	if policy.DefaultAction != ActionDeny {
 		t.Errorf("expected default_action 'deny', got '%s'", policy.DefaultAction)
+	}
+}
+
+func TestLoadPolicy_TrustedDirectories(t *testing.T) {
+	tmpDir := t.TempDir()
+	policyPath := filepath.Join(tmpDir, PolicyFileName)
+
+	// Policy with trusted_directories
+	content := `version: 1
+default_action: deny
+allowed_commands:
+  - glab
+trusted_directories:
+  - /home/linuxbrew/.linuxbrew/bin
+  - /opt/custom/bin
+`
+	if err := os.WriteFile(policyPath, []byte(content), 0600); err != nil {
+		t.Fatalf("failed to write policy file: %v", err)
+	}
+
+	policy, err := LoadPolicy(tmpDir)
+	if err != nil {
+		t.Fatalf("LoadPolicy failed: %v", err)
+	}
+
+	// Verify trusted_directories are loaded
+	expectedDirs := []string{"/home/linuxbrew/.linuxbrew/bin", "/opt/custom/bin"}
+	if len(policy.TrustedDirectories) != len(expectedDirs) {
+		t.Errorf("expected %d trusted directories, got %d: %v", len(expectedDirs), len(policy.TrustedDirectories), policy.TrustedDirectories)
+	}
+	for i, dir := range expectedDirs {
+		if policy.TrustedDirectories[i] != dir {
+			t.Errorf("trusted directory %d: expected %s, got %s", i, dir, policy.TrustedDirectories[i])
+		}
+	}
+
+	// Also test merge with these directories
+	dirs, warnings := mergeTrustedDirectories(policy)
+	fmt.Printf("Merged dirs: %v\nWarnings: %v\n", dirs, warnings)
+	if len(warnings) > 0 {
+		t.Errorf("unexpected warnings: %v", warnings)
+	}
+	// Should have defaults + the two policy dirs
+	if len(dirs) < len(TrustedDirectories)+2 {
+		t.Errorf("expected at least %d dirs (defaults + 2 policy), got %d: %v", len(TrustedDirectories)+2, len(dirs), dirs)
+	}
+	for _, d := range expectedDirs {
+		found := false
+		for _, ed := range dirs {
+			if ed == d {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected directory %s not found in merged result: %v", d, dirs)
+		}
 	}
 }
 
@@ -952,5 +1010,196 @@ func TestNewSecurityErrors(t *testing.T) {
 	}
 	if ErrCommandNotFound == nil {
 		t.Error("ErrCommandNotFound is nil")
+	}
+}
+
+// Tests for operator-controlled trusted-directory extension (Issue #179)
+
+// containsDir reports whether dir is present in dirs (after cleaning).
+func containsDir(dirs []string, dir string) bool {
+	cleaned := filepath.Clean(dir)
+	for _, d := range dirs {
+		if filepath.Clean(d) == cleaned {
+			return true
+		}
+	}
+	return false
+}
+
+func TestMergeTrustedDirectories_DefaultsOnly(t *testing.T) {
+	// No policy, no env var -> exactly the compiled-in defaults (cleaned, deduped,
+	// non-nil).
+	t.Setenv(EnvTrustedDirs, "")
+	dirs, warnings := mergeTrustedDirectories(nil)
+	if warnings != nil {
+		t.Errorf("expected no warnings for defaults-only, got %v", warnings)
+	}
+	if len(dirs) != len(TrustedDirectories) {
+		t.Errorf("expected %d defaults, got %d (%v)", len(TrustedDirectories), len(dirs), dirs)
+	}
+	for _, d := range TrustedDirectories {
+		if !containsDir(dirs, d) {
+			t.Errorf("default %s missing from merge result %v", d, dirs)
+		}
+	}
+}
+
+func TestMergeTrustedDirectories_PolicyField(t *testing.T) {
+	t.Setenv(EnvTrustedDirs, "")
+	extra := "/opt/custom/bin"
+	policy := &Policy{
+		TrustedDirectories: []string{extra},
+	}
+	dirs, warnings := mergeTrustedDirectories(policy)
+	if warnings != nil {
+		t.Errorf("expected no warnings, got %v", warnings)
+	}
+	if !containsDir(dirs, extra) {
+		t.Errorf("policy entry %s missing from %v", extra, dirs)
+	}
+	// Defaults must still be present.
+	for _, d := range TrustedDirectories {
+		if !containsDir(dirs, d) {
+			t.Errorf("default %s dropped from %v", d, dirs)
+		}
+	}
+}
+
+func TestMergeTrustedDirectories_EnvVar(t *testing.T) {
+	extra1 := "/opt/env-a/bin"
+	extra2 := "/opt/env-b/bin"
+	t.Setenv(EnvTrustedDirs, extra1+string(filepath.ListSeparator)+extra2)
+	dirs, warnings := mergeTrustedDirectories(nil)
+	if warnings != nil {
+		t.Errorf("expected no warnings, got %v", warnings)
+	}
+	if !containsDir(dirs, extra1) {
+		t.Errorf("env entry %s missing from %v", extra1, dirs)
+	}
+	if !containsDir(dirs, extra2) {
+		t.Errorf("env entry %s missing from %v", extra2, dirs)
+	}
+}
+
+func TestMergeTrustedDirectories_AllSourcesDedup(t *testing.T) {
+	// Same path supplied via policy AND env must appear exactly once.
+	shared := "/opt/shared/bin"
+	policyOnly := "/opt/policy/bin"
+	envOnly := "/opt/env/bin"
+	t.Setenv(EnvTrustedDirs, shared+string(filepath.ListSeparator)+envOnly)
+	policy := &Policy{
+		TrustedDirectories: []string{shared, policyOnly},
+	}
+	dirs, _ := mergeTrustedDirectories(policy)
+
+	// Count occurrences of the shared path.
+	count := 0
+	for _, d := range dirs {
+		if filepath.Clean(d) == filepath.Clean(shared) {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("shared path %s appeared %d times, expected 1 (dirs=%v)", shared, count, dirs)
+	}
+	if !containsDir(dirs, policyOnly) {
+		t.Errorf("policy-only entry %s missing from %v", policyOnly, dirs)
+	}
+	if !containsDir(dirs, envOnly) {
+		t.Errorf("env-only entry %s missing from %v", envOnly, dirs)
+	}
+}
+
+func TestMergeTrustedDirectories_RelativeRejected(t *testing.T) {
+	// Relative entries (from policy or env) must be skipped and reported as a
+	// warning, never silently accepted — a relative trusted path is ambiguous and
+	// unsafe for PATH-hardening. Use filepath.ListSeparator so the test is
+	// portable across Unix (':') and Windows (';').
+	t.Setenv(EnvTrustedDirs, "relative-env/bin"+string(filepath.ListSeparator)+"../escape")
+	policy := &Policy{
+		TrustedDirectories: []string{"relative-policy/bin"},
+	}
+	dirs, warnings := mergeTrustedDirectories(policy)
+
+	if len(warnings) < 3 {
+		t.Errorf("expected warnings for the relative entries, got %d (%v)", len(warnings), warnings)
+	}
+	for _, d := range dirs {
+		if !filepath.IsAbs(filepath.Clean(d)) {
+			t.Errorf("relative path leaked into result: %q (dirs=%v)", d, dirs)
+		}
+	}
+}
+
+func TestMergeTrustedDirectories_CleansPaths(t *testing.T) {
+	// Trailing slashes and redundant segments are normalized via filepath.Clean,
+	// and a cleaned duplicate of a default collapses onto it.
+	t.Setenv(EnvTrustedDirs, "/usr/bin//")
+	dirs, warnings := mergeTrustedDirectories(nil)
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings, got %v", warnings)
+	}
+	count := 0
+	for _, d := range dirs {
+		if filepath.Clean(d) == "/usr/bin" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected /usr/bin exactly once after cleaning, got %d (%v)", count, dirs)
+	}
+}
+
+func TestValidatePolicy_TrustedDirectories(t *testing.T) {
+	tests := []struct {
+		name    string
+		policy  *Policy
+		wantErr bool
+	}{
+		{
+			name: "absolute entries valid",
+			policy: &Policy{
+				Version:            1,
+				DefaultAction:      ActionDeny,
+				TrustedDirectories: []string{"/opt/homebrew/bin", "/home/linuxbrew/.linuxbrew/bin"},
+			},
+			wantErr: false,
+		},
+		{
+			name: "relative entry rejected",
+			policy: &Policy{
+				Version:            1,
+				DefaultAction:      ActionDeny,
+				TrustedDirectories: []string{"relative/bin"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty entry rejected",
+			policy: &Policy{
+				Version:            1,
+				DefaultAction:      ActionDeny,
+				TrustedDirectories: []string{""},
+			},
+			wantErr: true,
+		},
+		{
+			name: "whitespace-only entry rejected",
+			policy: &Policy{
+				Version:            1,
+				DefaultAction:      ActionDeny,
+				TrustedDirectories: []string{"   "},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.policy.ValidatePolicy()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidatePolicy() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
 	}
 }
