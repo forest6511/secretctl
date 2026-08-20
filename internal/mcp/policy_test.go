@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -121,6 +122,63 @@ allowed_commands:
 	// Should default to deny
 	if policy.DefaultAction != ActionDeny {
 		t.Errorf("expected default_action 'deny', got '%s'", policy.DefaultAction)
+	}
+}
+
+func TestLoadPolicy_TrustedDirectories(t *testing.T) {
+	tmpDir := t.TempDir()
+	policyPath := filepath.Join(tmpDir, PolicyFileName)
+
+	// Policy with trusted_directories
+	content := `version: 1
+default_action: deny
+allowed_commands:
+  - glab
+trusted_directories:
+  - /home/linuxbrew/.linuxbrew/bin
+  - /opt/custom/bin
+`
+	if err := os.WriteFile(policyPath, []byte(content), 0600); err != nil {
+		t.Fatalf("failed to write policy file: %v", err)
+	}
+
+	policy, err := LoadPolicy(tmpDir)
+	if err != nil {
+		t.Fatalf("LoadPolicy failed: %v", err)
+	}
+
+	// Verify trusted_directories are loaded
+	expectedDirs := []string{"/home/linuxbrew/.linuxbrew/bin", "/opt/custom/bin"}
+	if len(policy.TrustedDirectories) != len(expectedDirs) {
+		t.Errorf("expected %d trusted directories, got %d: %v", len(expectedDirs), len(policy.TrustedDirectories), policy.TrustedDirectories)
+	}
+	for i, dir := range expectedDirs {
+		if policy.TrustedDirectories[i] != dir {
+			t.Errorf("trusted directory %d: expected %s, got %s", i, dir, policy.TrustedDirectories[i])
+		}
+	}
+
+	// Also test merge with these directories
+	dirs, warnings := mergeTrustedDirectories(policy)
+	fmt.Printf("Merged dirs: %v\nWarnings: %v\n", dirs, warnings)
+	if len(warnings) > 0 {
+		t.Errorf("unexpected warnings: %v", warnings)
+	}
+	// Should have defaults + the two policy dirs
+	if len(dirs) < len(TrustedDirectories)+2 {
+		t.Errorf("expected at least %d dirs (defaults + 2 policy), got %d: %v", len(TrustedDirectories)+2, len(dirs), dirs)
+	}
+	for _, d := range expectedDirs {
+		found := false
+		for _, ed := range dirs {
+			if ed == d {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected directory %s not found in merged result: %v", d, dirs)
+		}
 	}
 }
 
